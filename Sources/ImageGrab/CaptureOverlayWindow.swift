@@ -3,11 +3,11 @@ import AppKit
 // Preview window shown AFTER native screencapture, for review before saving
 @MainActor
 final class CapturePreviewWindow: NSWindow {
-    private let onSave: @MainActor (NSImage) -> Void
+    private let onSave: @MainActor (NSImage, Bool) -> Void
     private let onCancel: @MainActor () -> Void
     private let capturedImage: NSImage
 
-    init(image: NSImage, onSave: @escaping @MainActor (NSImage) -> Void, onCancel: @escaping @MainActor () -> Void) {
+    init(image: NSImage, onSave: @escaping @MainActor (NSImage, Bool) -> Void, onCancel: @escaping @MainActor () -> Void) {
         self.capturedImage = image
         self.onSave = onSave
         self.onCancel = onCancel
@@ -68,16 +68,23 @@ final class CapturePreviewWindow: NSWindow {
         cancelBtn.bezelStyle = .rounded
         cancelBtn.controlSize = .large
         cancelBtn.keyEquivalent = "\u{1b}"
-        cancelBtn.frame = NSRect(x: displayW - 280, y: 10, width: 100, height: 30)
+        cancelBtn.frame = NSRect(x: displayW - 440, y: 10, width: 100, height: 30)
         toolbar.addSubview(cancelBtn)
 
         // Save button
-        let saveBtn = NSButton(title: "Save to ImageGrab", target: self, action: #selector(saveClicked))
+        let saveBtn = NSButton(title: "Save", target: self, action: #selector(saveClicked))
         saveBtn.bezelStyle = .rounded
         saveBtn.controlSize = .large
-        saveBtn.keyEquivalent = "\r"
-        saveBtn.frame = NSRect(x: displayW - 170, y: 10, width: 160, height: 30)
+        saveBtn.frame = NSRect(x: displayW - 330, y: 10, width: 80, height: 30)
         toolbar.addSubview(saveBtn)
+
+        // Save & Copy Path button (primary action)
+        let saveCopyBtn = NSButton(title: "Save & Copy Path", target: self, action: #selector(saveAndCopyPathClicked))
+        saveCopyBtn.bezelStyle = .rounded
+        saveCopyBtn.controlSize = .large
+        saveCopyBtn.keyEquivalent = "\r"
+        saveCopyBtn.frame = NSRect(x: displayW - 240, y: 10, width: 230, height: 30)
+        toolbar.addSubview(saveCopyBtn)
 
         container.addSubview(toolbar)
         contentView = container
@@ -93,7 +100,12 @@ final class CapturePreviewWindow: NSWindow {
 
     @objc private func saveClicked() {
         orderOut(nil)
-        onSave(capturedImage)
+        onSave(capturedImage, false)
+    }
+
+    @objc private func saveAndCopyPathClicked() {
+        orderOut(nil)
+        onSave(capturedImage, true)
     }
 
     @objc private func cancelClicked() {

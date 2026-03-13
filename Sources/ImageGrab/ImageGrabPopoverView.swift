@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ImageGrabPopoverView: View {
     @ObservedObject var viewModel: PopoverViewModel
@@ -123,6 +124,34 @@ struct ImageGrabPopoverView: View {
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }
+                    }
+                    .onDrag {
+                        let url = URL(fileURLWithPath: viewModel.fullPath(for: entry))
+                        let provider = NSItemProvider()
+                        provider.suggestedName = entry.filename
+
+                        // Register raw PNG data for apps that accept image data
+                        // directly (browsers, Electron apps like Claude desktop)
+                        if let imageData = try? Data(contentsOf: url) {
+                            provider.registerDataRepresentation(
+                                forTypeIdentifier: UTType.png.identifier,
+                                visibility: .all
+                            ) { completion in
+                                completion(imageData, nil)
+                                return nil
+                            }
+                        }
+
+                        // Register as file for file-system-aware apps (Finder, etc.)
+                        provider.registerFileRepresentation(
+                            forTypeIdentifier: UTType.png.identifier,
+                            fileOptions: [],
+                            visibility: .all
+                        ) { completion in
+                            completion(url, false, nil)
+                            return nil
+                        }
+                        return provider
                     }
             }
 

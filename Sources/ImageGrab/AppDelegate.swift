@@ -72,60 +72,73 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private var clipboardPollTimer: Timer?
+
     private func startCapture() {
         // Close popover if open
         popover?.performClose(nil)
 
-        let tmpPath = FileManager.default.temporaryDirectory
-            .appendingPathComponent("imagegrab-\(UUID().uuidString).png").path
+        // Record current clipboard state, then simulate Cmd+Shift+Ctrl+4
+        // This triggers the native macOS screenshot-to-clipboard crosshair.
+        // Requires Accessibility permission (persists across rebuilds), NOT Screen Recording.
+        let initialChangeCount = NSPasteboard.general.changeCount
 
-        // Use native screencapture -i (interactive crosshair, no permission needed)
-        Task.detached {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-            process.arguments = ["-i", "-x", tmpPath]
+        let source = CGEventSource(stateID: .hidSystemState)
+        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x15, keyDown: true)  // 0x15 = kVK_ANSI_4
+        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0x15, keyDown: false)
+        let flags: CGEventFlags = [.maskCommand, .maskShift, .maskControl]
+        keyDown?.flags = flags
+        keyUp?.flags = flags
+        keyDown?.post(tap: .cghidEventTap)
+        keyUp?.post(tap: .cghidEventTap)
 
-            do {
-                try process.run()
-                process.waitUntilExit()
-            } catch {
-                return
-            }
-
-            // User cancelled (Escape) — no file created
-            guard FileManager.default.fileExists(atPath: tmpPath) else { return }
-
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                guard let image = NSImage(contentsOfFile: tmpPath) else {
-                    try? FileManager.default.removeItem(atPath: tmpPath)
-                    return
+        // Poll clipboard for the new screenshot
+        let startTime = Date()
+        clipboardPollTimer?.invalidate()
+        clipboardPollTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] timer in
+            let pasteboard = NSPasteboard.general
+            if pasteboard.changeCount != initialChangeCount {
+                timer.invalidate()
+                Task { @MainActor [weak self] in
+                    self?.handleClipboardCapture()
                 }
-
-                // Clean up temp file
-                try? FileManager.default.removeItem(atPath: tmpPath)
-
-                // Show preview window for review
-                let preview = CapturePreviewWindow(
-                    image: image,
-                    onSave: { [weak self] img in
-                        self?.handleCapturedImage(img)
-                        self?.previewWindow = nil
-                    },
-                    onCancel: { [weak self] in
-                        self?.previewWindow = nil
-                    }
-                )
-                self.previewWindow = preview
-                preview.show()
+            } else if Date().timeIntervalSince(startTime) > 30 {
+                // Timeout — user likely cancelled
+                timer.invalidate()
             }
         }
     }
 
-    private func handleCapturedImage(_ image: NSImage) {
+    private func handleClipboardCapture() {
+        guard let image = NSImage(pasteboard: NSPasteboard.general) else {
+            NSSound.beep()
+            return
+        }
+
+        let preview = CapturePreviewWindow(
+            image: image,
+            onSave: { [weak self] img, copyPath in
+                self?.handleCapturedImage(img, copyPath: copyPath)
+                self?.previewWindow = nil
+            },
+            onCancel: { [weak self] in
+                self?.previewWindow = nil
+            }
+        )
+        self.previewWindow = preview
+        preview.show()
+    }
+
+    private func handleCapturedImage(_ image: NSImage, copyPath: Bool = false) {
         guard let entry = captureStore.addCapture(image: image) else {
             NSSound.beep()
             return
+        }
+
+        if copyPath {
+            let path = captureStore.path(for: entry)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(path, forType: .string)
         }
 
         viewModel?.refresh()
