@@ -91,20 +91,22 @@ final class CapturePreviewWindow: NSWindow {
 
         // Tool segmented control
         let tools = NSSegmentedControl()
-        tools.segmentCount = 3
+        tools.segmentCount = 4
         tools.trackingMode = .selectOne
         tools.setImage(NSImage(systemSymbolName: "pencil.tip", accessibilityDescription: "Pen")!, forSegment: 0)
         tools.setImage(NSImage(systemSymbolName: "rectangle", accessibilityDescription: "Box")!, forSegment: 1)
         tools.setImage(NSImage(systemSymbolName: "arrow.up.right", accessibilityDescription: "Arrow")!, forSegment: 2)
+        tools.setImage(NSImage(systemSymbolName: "textformat", accessibilityDescription: "Text")!, forSegment: 3)
         tools.setWidth(36, forSegment: 0)
         tools.setWidth(36, forSegment: 1)
         tools.setWidth(36, forSegment: 2)
+        tools.setWidth(36, forSegment: 3)
         tools.selectedSegment = 1 // default to box
         tools.target = self
         tools.action = #selector(toolChanged(_:))
-        tools.frame = NSRect(x: x, y: 6, width: 114, height: 28)
+        tools.frame = NSRect(x: x, y: 6, width: 150, height: 28)
         bar.addSubview(tools)
-        x += 114 + 16
+        x += 150 + 16
 
         // Separator
         let sep1 = separatorView(at: x, height: 24, y: 8)
@@ -172,7 +174,7 @@ final class CapturePreviewWindow: NSWindow {
         let cancelBtn = NSButton(title: "Cancel", target: self, action: #selector(cancelClicked))
         cancelBtn.bezelStyle = .rounded
         cancelBtn.controlSize = .large
-        cancelBtn.keyEquivalent = "\u{1b}"
+        // Escape handled in keyDown so text editing can intercept it
         cancelBtn.frame = NSRect(x: width - 440, y: 10, width: 100, height: 30)
         bar.addSubview(cancelBtn)
 
@@ -201,8 +203,17 @@ final class CapturePreviewWindow: NSWindow {
     }
 
     override func keyDown(with event: NSEvent) {
+        // Text editing gets first crack at key events
+        if annotationOverlay.handleKeyDown(event) {
+            return
+        }
         if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "z" {
             annotationOverlay.undo()
+            return
+        }
+        // Escape closes the window (when not editing text)
+        if event.keyCode == 53 {
+            cancelClicked()
             return
         }
         super.keyDown(with: event)
@@ -211,7 +222,8 @@ final class CapturePreviewWindow: NSWindow {
     // MARK: - Actions
 
     @objc private func toolChanged(_ sender: NSSegmentedControl) {
-        let tools: [AnnotationTool] = [.pen, .box, .arrow]
+        annotationOverlay.commitTextIfNeeded()
+        let tools: [AnnotationTool] = [.pen, .box, .arrow, .text]
         annotationOverlay.currentTool = tools[sender.selectedSegment]
     }
 
@@ -233,7 +245,8 @@ final class CapturePreviewWindow: NSWindow {
     }
 
     private func finalImage() -> NSImage {
-        annotationOverlay.compositeOnto(image: capturedImage)
+        annotationOverlay.commitTextIfNeeded()
+        return annotationOverlay.compositeOnto(image: capturedImage)
     }
 
     @objc private func saveClicked() {

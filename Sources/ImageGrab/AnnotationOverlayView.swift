@@ -1,7 +1,7 @@
 import AppKit
 
 enum AnnotationTool {
-    case pen, box, arrow
+    case pen, box, arrow, text
 }
 
 struct Annotation {
@@ -9,11 +9,15 @@ struct Annotation {
     let color: NSColor
     var points: [CGPoint]
     let lineWidth: CGFloat
+    var text: String = ""
+    var fontSize: CGFloat = 0
 }
 
 @MainActor
 final class AnnotationOverlayView: NSView {
-    var currentTool: AnnotationTool = .box
+    var currentTool: AnnotationTool = .box {
+        didSet { window?.invalidateCursorRects(for: self) }
+    }
     var currentColor: NSColor = .systemRed
     var onAnnotationsChanged: (@MainActor () -> Void)?
 
@@ -22,10 +26,18 @@ final class AnnotationOverlayView: NSView {
     private let baseLineWidth: CGFloat = 3.0
     private let arrowLineWidth: CGFloat = 2.5
 
-    var hasAnnotations: Bool { !annotations.isEmpty }
+    // Text editing state
+    private var isEditingText = false
+    private var editingText = ""
+    private var editingPosition: CGPoint = .zero
+    private var currentFontSize: CGFloat = 18
+    private var cursorVisible = true
+    private var cursorTimer: Timer?
+
+    var hasAnnotations: Bool { !annotations.isEmpty || (isEditingText && !editingText.isEmpty) }
 
     override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .crosshair)
+        addCursorRect(bounds, cursor: currentTool == .text ? .iBeam : .crosshair)
     }
 
     func undo() {
@@ -35,10 +47,92 @@ final class AnnotationOverlayView: NSView {
         onAnnotationsChanged?()
     }
 
+    /// Finalize any in-progress text annotation
+    func commitTextIfNeeded() {
+        guard isEditingText else { return }
+        if !editingText.isEmpty {
+            let annotation = Annotation(
+                tool: .text,
+                color: currentColor,
+                points: [editingPosition],
+                lineWidth: 0,
+                text: editingText,
+                fontSize: currentFontSize
+            )
+            annotations.append(annotation)
+            onAnnotationsChanged?()
+        }
+        isEditingText = false
+        editingText = ""
+        stopCursorBlink()
+        needsDisplay = true
+    }
+
+    /// Handle a key event during text editing. Returns true if consumed.
+    func handleKeyDown(_ event: NSEvent) -> Bool {
+        guard isEditingText else { return false }
+
+        // Cmd+Z while editing: cancel current text
+        if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "z" {
+            isEditingText = false
+            editingText = ""
+            stopCursorBlink()
+            needsDisplay = true
+            onAnnotationsChanged?()
+            return true
+        }
+
+        switch event.keyCode {
+        case 36: // Return — finalize
+            commitTextIfNeeded()
+            return true
+        case 53: // Escape — finalize
+            commitTextIfNeeded()
+            return true
+        case 51: // Backspace
+            if !editingText.isEmpty {
+                editingText.removeLast()
+                needsDisplay = true
+                onAnnotationsChanged?()
+            }
+            return true
+        default:
+            break
+        }
+
+        // Regular character input (no Cmd/Ctrl modifiers)
+        if !event.modifierFlags.contains(.command),
+           !event.modifierFlags.contains(.control),
+           let chars = event.characters, !chars.isEmpty {
+            let filtered = String(chars.unicodeScalars.filter {
+                $0.value >= 0x20 && $0.value < 0xF700
+            })
+            if !filtered.isEmpty {
+                editingText.append(filtered)
+                cursorVisible = true // reset blink on typing
+                needsDisplay = true
+                onAnnotationsChanged?()
+            }
+        }
+        return true // consume all keys while editing
+    }
+
     // MARK: - Mouse handling
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+
+        if currentTool == .text {
+            commitTextIfNeeded()
+            // Start new text editing
+            isEditingText = true
+            editingText = ""
+            editingPosition = point
+            startCursorBlink()
+            needsDisplay = true
+            return
+        }
+
         let lw = currentTool == .arrow ? arrowLineWidth : baseLineWidth
         currentAnnotation = Annotation(tool: currentTool, color: currentColor, points: [point], lineWidth: lw)
         needsDisplay = true
@@ -60,6 +154,8 @@ final class AnnotationOverlayView: NSView {
             } else {
                 currentAnnotation!.points[1] = point
             }
+        case .text:
+            break
         }
         needsDisplay = true
     }
@@ -74,6 +170,37 @@ final class AnnotationOverlayView: NSView {
         needsDisplay = true
     }
 
+    // MARK: - Scroll wheel (font size)
+
+    override func scrollWheel(with event: NSEvent) {
+        guard currentTool == .text else {
+            super.scrollWheel(with: event)
+            return
+        }
+        currentFontSize = max(10, min(48, currentFontSize + event.scrollingDeltaY * 0.5))
+        if isEditingText { needsDisplay = true }
+    }
+
+    // MARK: - Cursor blink
+
+    private func startCursorBlink() {
+        cursorVisible = true
+        cursorTimer?.invalidate()
+        cursorTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.isEditingText else { return }
+                self.cursorVisible.toggle()
+                self.needsDisplay = true
+            }
+        }
+    }
+
+    private func stopCursorBlink() {
+        cursorTimer?.invalidate()
+        cursorTimer = nil
+        cursorVisible = false
+    }
+
     // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {
@@ -82,6 +209,10 @@ final class AnnotationOverlayView: NSView {
         }
         if let current = currentAnnotation {
             drawAnnotation(current)
+        }
+        // Draw in-progress text
+        if isEditingText {
+            drawTextContent(editingText, at: editingPosition, fontSize: currentFontSize, color: currentColor, showCursor: cursorVisible)
         }
     }
 
@@ -120,7 +251,6 @@ final class AnnotationOverlayView: NSView {
             let start = annotation.points[0]
             let end = annotation.points[1]
 
-            // Shaft
             let shaft = NSBezierPath()
             shaft.lineWidth = annotation.lineWidth
             shaft.lineCapStyle = .round
@@ -128,7 +258,6 @@ final class AnnotationOverlayView: NSView {
             shaft.line(to: end)
             shaft.stroke()
 
-            // Arrowhead — sized proportional to line width
             let angle = atan2(end.y - start.y, end.x - start.x)
             let headLen = annotation.lineWidth * 5
             let headAngle: CGFloat = .pi / 6
@@ -149,6 +278,47 @@ final class AnnotationOverlayView: NSView {
             head.line(to: p2)
             head.close()
             head.fill()
+
+        case .text:
+            guard !annotation.text.isEmpty, let pos = annotation.points.first else { return }
+            drawTextContent(annotation.text, at: pos, fontSize: annotation.fontSize, color: annotation.color, showCursor: false)
+        }
+    }
+
+    private func drawTextContent(_ text: String, at position: CGPoint, fontSize: CGFloat, color: NSColor, showCursor: Bool) {
+        let displayText = text.isEmpty && showCursor ? " " : text
+        let font = NSFont.systemFont(ofSize: fontSize, weight: .medium)
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: color,
+        ]
+        let attrStr = NSAttributedString(string: displayText, attributes: attrs)
+        let textSize = attrStr.size()
+
+        let padding: CGFloat = 4
+        let bgRect = NSRect(
+            x: position.x - padding,
+            y: position.y - padding,
+            width: textSize.width + padding * 2,
+            height: textSize.height + padding * 2
+        )
+
+        // Semi-transparent background pill
+        NSColor.black.withAlphaComponent(0.5).setFill()
+        NSBezierPath(roundedRect: bgRect, xRadius: 4, yRadius: 4).fill()
+
+        // Text
+        attrStr.draw(at: position)
+
+        // Blinking cursor
+        if showCursor {
+            let cursorX = position.x + (text.isEmpty ? 0 : textSize.width)
+            let cursorPath = NSBezierPath()
+            cursorPath.move(to: CGPoint(x: cursorX, y: position.y + 2))
+            cursorPath.line(to: CGPoint(x: cursorX, y: position.y + textSize.height - 2))
+            cursorPath.lineWidth = 1.5
+            color.setStroke()
+            cursorPath.stroke()
         }
     }
 
@@ -171,7 +341,9 @@ final class AnnotationOverlayView: NSView {
                 tool: annotation.tool,
                 color: annotation.color,
                 points: scaledPoints,
-                lineWidth: annotation.lineWidth * scale
+                lineWidth: annotation.lineWidth * scale,
+                text: annotation.text,
+                fontSize: annotation.fontSize * scale
             )
             drawAnnotation(scaled)
         }
