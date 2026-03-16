@@ -126,12 +126,17 @@ struct ImageGrabPopoverView: View {
                         }
                     }
                     .onDrag {
+                        viewModel.onDragStarted?()
+
                         let url = URL(fileURLWithPath: viewModel.fullPath(for: entry))
                         let provider = NSItemProvider()
                         provider.suggestedName = entry.filename
 
-                        // Register raw PNG data for apps that accept image data
-                        // directly (browsers, Electron apps like Claude desktop)
+                        // Register file URL for Electron/browser drop targets
+                        // (they need public.file-url to create HTML5 File objects)
+                        provider.registerObject(url as NSURL, visibility: .all)
+
+                        // Register raw PNG data for apps that accept image data directly
                         if let imageData = try? Data(contentsOf: url) {
                             provider.registerDataRepresentation(
                                 forTypeIdentifier: UTType.png.identifier,

@@ -5,6 +5,9 @@ import Foundation
 public final class PopoverViewModel: ObservableObject {
     @Published public var entries: [CaptureEntry] = []
 
+    /// Called when a drag starts so the popover can stay open during the session
+    public var onDragStarted: (() -> Void)?
+
     private let store: CaptureStore
 
     public init(store: CaptureStore) {

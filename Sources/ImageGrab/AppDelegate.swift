@@ -49,6 +49,14 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         p.behavior = .transient
         p.contentViewController = NSHostingController(rootView: ImageGrabPopoverView(viewModel: vm))
         popover = p
+
+        // Keep popover open during drag sessions so cross-app drops work
+        vm.onDragStarted = { [weak self] in
+            self?.popover?.behavior = .applicationDefined
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                self?.popover?.behavior = .transient
+            }
+        }
     }
 
     @objc private func togglePopover() {
