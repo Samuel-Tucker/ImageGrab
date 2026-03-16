@@ -30,12 +30,16 @@ final class CapturePreviewWindow: NSWindow {
         let scale = min(1.0, min(maxW / imgW, (maxH - bottomBarH - annotBarH) / imgH))
         let displayW = imgW * scale
         let displayH = imgH * scale
+
+        // Minimum width so toolbars/buttons are always visible
+        let minWindowW: CGFloat = 460
+        let windowW = max(displayW, minWindowW)
         let totalH = displayH + bottomBarH + annotBarH
 
         let windowRect = NSRect(
-            x: (screen.frame.width - displayW) / 2,
+            x: (screen.frame.width - windowW) / 2,
             y: (screen.frame.height - totalH) / 2,
-            width: displayW,
+            width: windowW,
             height: totalH
         )
 
@@ -50,10 +54,13 @@ final class CapturePreviewWindow: NSWindow {
         level = .floating
         isReleasedWhenClosed = false
 
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: displayW, height: totalH))
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: windowW, height: totalH))
+
+        // Center image horizontally if window is wider than image
+        let imageX = (windowW - displayW) / 2
 
         // Image view with yellow border
-        let imageView = NSImageView(frame: NSRect(x: 0, y: bottomBarH, width: displayW, height: displayH))
+        let imageView = NSImageView(frame: NSRect(x: imageX, y: bottomBarH, width: displayW, height: displayH))
         imageView.image = image
         imageView.imageScaling = .scaleProportionallyUpOrDown
         imageView.wantsLayer = true
@@ -62,7 +69,7 @@ final class CapturePreviewWindow: NSWindow {
         container.addSubview(imageView)
 
         // Annotation overlay (on top of image, same frame)
-        let overlay = AnnotationOverlayView(frame: NSRect(x: 0, y: bottomBarH, width: displayW, height: displayH))
+        let overlay = AnnotationOverlayView(frame: NSRect(x: imageX, y: bottomBarH, width: displayW, height: displayH))
         overlay.onAnnotationsChanged = { [weak self, weak overlay] in
             self?.undoBtn.isEnabled = overlay?.hasAnnotations ?? false
         }
@@ -70,15 +77,15 @@ final class CapturePreviewWindow: NSWindow {
         container.addSubview(overlay)
 
         // Annotation toolbar (above image)
-        let annotBar = NSView(frame: NSRect(x: 0, y: bottomBarH + displayH, width: displayW, height: annotBarH))
+        let annotBar = NSView(frame: NSRect(x: 0, y: bottomBarH + displayH, width: windowW, height: annotBarH))
         annotBar.wantsLayer = true
         annotBar.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         setupAnnotationBar(annotBar)
         container.addSubview(annotBar)
 
         // Bottom toolbar (save/cancel)
-        let bottomBar = NSView(frame: NSRect(x: 0, y: 0, width: displayW, height: bottomBarH))
-        setupBottomBar(bottomBar, width: displayW, imgW: imgW, imgH: imgH)
+        let bottomBar = NSView(frame: NSRect(x: 0, y: 0, width: windowW, height: bottomBarH))
+        setupBottomBar(bottomBar, width: windowW, imgW: imgW, imgH: imgH)
         container.addSubview(bottomBar)
 
         contentView = container
@@ -165,30 +172,40 @@ final class CapturePreviewWindow: NSWindow {
     // MARK: - Bottom toolbar
 
     private func setupBottomBar(_ bar: NSView, width: CGFloat, imgW: CGFloat, imgH: CGFloat) {
+        // Right-align buttons, size label takes remaining space on the left
+        let saveCopyW: CGFloat = 180
+        let saveW: CGFloat = 70
+        let cancelW: CGFloat = 80
+        let pad: CGFloat = 10
+        let gap: CGFloat = 8
+
+        let saveCopyX = width - pad - saveCopyW
+        let saveX = saveCopyX - gap - saveW
+        let cancelX = saveX - gap - cancelW
+
         let sizeLabel = NSTextField(labelWithString: "\(Int(imgW)) × \(Int(imgH)) px")
-        sizeLabel.font = .monospacedSystemFont(ofSize: 12, weight: .medium)
+        sizeLabel.font = .monospacedSystemFont(ofSize: 11, weight: .medium)
         sizeLabel.textColor = .secondaryLabelColor
-        sizeLabel.frame = NSRect(x: 12, y: 14, width: 150, height: 20)
+        sizeLabel.frame = NSRect(x: 12, y: 14, width: max(cancelX - 16, 0), height: 20)
         bar.addSubview(sizeLabel)
 
         let cancelBtn = NSButton(title: "Cancel", target: self, action: #selector(cancelClicked))
         cancelBtn.bezelStyle = .rounded
         cancelBtn.controlSize = .large
-        // Escape handled in keyDown so text editing can intercept it
-        cancelBtn.frame = NSRect(x: width - 440, y: 10, width: 100, height: 30)
+        cancelBtn.frame = NSRect(x: cancelX, y: 10, width: cancelW, height: 30)
         bar.addSubview(cancelBtn)
 
         let saveBtn = NSButton(title: "Save", target: self, action: #selector(saveClicked))
         saveBtn.bezelStyle = .rounded
         saveBtn.controlSize = .large
-        saveBtn.frame = NSRect(x: width - 330, y: 10, width: 80, height: 30)
+        saveBtn.frame = NSRect(x: saveX, y: 10, width: saveW, height: 30)
         bar.addSubview(saveBtn)
 
         let saveCopyBtn = NSButton(title: "Save & Copy Path", target: self, action: #selector(saveAndCopyPathClicked))
         saveCopyBtn.bezelStyle = .rounded
         saveCopyBtn.controlSize = .large
         saveCopyBtn.keyEquivalent = "\r"
-        saveCopyBtn.frame = NSRect(x: width - 240, y: 10, width: 230, height: 30)
+        saveCopyBtn.frame = NSRect(x: saveCopyX, y: 10, width: saveCopyW, height: 30)
         bar.addSubview(saveCopyBtn)
     }
 
