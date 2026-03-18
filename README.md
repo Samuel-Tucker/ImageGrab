@@ -19,7 +19,7 @@ A lightweight macOS menu bar app for screen captures with built-in annotation to
 - **Annotation tools** — Draw with pen, box, arrow, and text tools across 5 color presets
 - **Thumbnail grid** — Browse recent captures in a menu bar popover (up to 50)
 - **Drag and drop** — Drag images from the popover directly into any app (Slack, browsers, editors, etc.)
-- **AI auto-rename** — Generates short, descriptive filenames via [kimi-cli](https://github.com/anthropics/kimi-cli) (falls back to timestamps)
+- **AI auto-rename** — Generates descriptive filenames using a local vision model (see [AI Rename](#ai-auto-rename) below)
 - **Inline rename** — Click any filename to edit it; AI-named files are marked with a sparkles icon
 - **Context menu** — Right-click any capture to copy path, reveal in Finder, rename, or delete
 
@@ -58,6 +58,50 @@ Captures are stored in `~/repos/ImageGrab/captures/`.
 | `Esc` | Cancel capture / dismiss text |
 | `Return` | Save & Copy Path |
 | `Scroll wheel` | Adjust text size (text tool) |
+
+## AI Auto-Rename
+
+ImageGrab can automatically rename screenshots with descriptive filenames (e.g. `api-reference-docs.png` instead of `capture-20260318-112738.png`). This is an **optional feature** that requires a local AI vision model.
+
+### How it works
+
+After each capture, ImageGrab sends the screenshot to a local [Ollama](https://ollama.com) vision model that looks at the image and suggests a short, descriptive name. The rename happens in the background — if no model is available, the timestamp name is kept.
+
+### Setup
+
+1. **Install Ollama** (if you don't have it):
+   ```sh
+   brew install ollama
+   ```
+
+2. **Pull the moondream model** (~1.7GB download):
+   ```sh
+   ollama pull moondream
+   ```
+
+3. **Make sure Ollama is running:**
+   ```sh
+   ollama serve
+   ```
+   Or launch the Ollama app — it runs in the menu bar.
+
+That's it. ImageGrab will detect Ollama automatically on `localhost:11434`.
+
+### Model details
+
+| | |
+|---|---|
+| **Model** | [moondream](https://ollama.com/library/moondream) (1.8B params) |
+| **Disk** | ~1.7 GB |
+| **RAM** | ~1.1 GB (runs on GPU via Metal) |
+| **Speed** | 1-3 seconds per rename |
+| **Privacy** | Fully local — no images leave your machine |
+
+Any Mac with 8GB+ RAM can run moondream alongside ImageGrab without issues.
+
+### Fallback
+
+If Ollama is not installed or the model isn't available, ImageGrab falls back to [kimi-cli](https://github.com/anthropics/kimi-cli) (text-only, less accurate). If neither is available, files keep their timestamp names — the app works fine without AI rename.
 
 ## Tech Stack
 
