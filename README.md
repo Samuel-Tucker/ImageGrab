@@ -97,7 +97,7 @@ That's it. ImageGrab will detect Ollama automatically on `localhost:11434`.
 | **Speed** | 1-3 seconds per rename |
 | **Privacy** | Fully local — no images leave your machine |
 
-Any Mac with 8GB+ RAM can run moondream alongside ImageGrab without issues.
+The model is **not** always in memory — Ollama loads it on demand when a rename is triggered, then automatically unloads it after 5 minutes of inactivity. Any Mac with 8GB+ RAM can run moondream alongside ImageGrab without issues.
 
 ### Fallback
 
