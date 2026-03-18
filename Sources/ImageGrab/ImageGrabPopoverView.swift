@@ -6,6 +6,8 @@ struct ImageGrabPopoverView: View {
     @State private var editingID: UUID?
     @State private var editText = ""
     @State private var copiedID: UUID?
+    @State private var hoveredID: UUID?
+    @State private var showClearAllConfirm = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -39,9 +41,9 @@ struct ImageGrabPopoverView: View {
             } else {
                 ScrollView {
                     LazyVGrid(columns: [
-                        GridItem(.fixed(130)),
-                        GridItem(.fixed(130))
-                    ], spacing: 8) {
+                        GridItem(.flexible()),
+                        GridItem(.flexible())
+                    ], spacing: 10) {
                         ForEach(viewModel.entries) { entry in
                             captureCell(entry)
                         }
@@ -52,22 +54,53 @@ struct ImageGrabPopoverView: View {
 
             Divider()
 
-            // Footer
+            // Footer — pill-style buttons with SF Symbols
             HStack {
-                Button("Open Folder") {
+                Button {
                     viewModel.openFolder()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "folder")
+                            .font(.system(size: 10))
+                        Text("Open Folder")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Color.secondary.opacity(0.12))
+                    .clipShape(Capsule())
                 }
-                .buttonStyle(.borderless)
-                .font(.caption)
+                .buttonStyle(.plain)
 
                 Spacer()
 
-                Button("Clear All") {
-                    viewModel.clearAll()
+                Button {
+                    showClearAllConfirm = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 10))
+                        Text("Clear All")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Color.secondary.opacity(0.12))
+                    .clipShape(Capsule())
                 }
-                .buttonStyle(.borderless)
-                .font(.caption)
-                .foregroundStyle(.red)
+                .buttonStyle(.plain)
+                .confirmationDialog(
+                    "Delete all captures?",
+                    isPresented: $showClearAllConfirm,
+                    titleVisibility: .visible
+                ) {
+                    Button("Clear All", role: .destructive) {
+                        viewModel.clearAll()
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("This action cannot be undone.")
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
@@ -78,86 +111,112 @@ struct ImageGrabPopoverView: View {
     @ViewBuilder
     private func captureCell(_ entry: CaptureEntry) -> some View {
         VStack(spacing: 4) {
-            // Thumbnail
+            // Thumbnail with hover-only copy overlay
             if let thumb = viewModel.thumbnailImage(for: entry) {
-                Image(nsImage: thumb)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: 60, height: 60)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(copiedID == entry.id ? Color.green : Color.clear, lineWidth: 2)
-                    )
-                    .onTapGesture {
-                        viewModel.copyPath(for: entry)
-                        copiedID = entry.id
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                            if copiedID == entry.id { copiedID = nil }
+                ZStack(alignment: .topTrailing) {
+                    Image(nsImage: thumb)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 80)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(copiedID == entry.id ? Color.green : Color.clear, lineWidth: 2)
+                        )
+
+                    // Copy button — appears on hover
+                    if hoveredID == entry.id || copiedID == entry.id {
+                        Button {
+                            copyPath(for: entry)
+                        } label: {
+                            Image(systemName: copiedID == entry.id ? "checkmark.circle.fill" : "doc.on.doc")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(copiedID == entry.id ? .green : .white)
+                                .padding(5)
+                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 5))
                         }
+                        .buttonStyle(.plain)
+                        .padding(4)
+                        .transition(.opacity)
                     }
-                    .contextMenu {
-                        Button {
-                            viewModel.copyPath(for: entry)
-                            copiedID = entry.id
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                                if copiedID == entry.id { copiedID = nil }
-                            }
-                        } label: {
-                            Label("Copy Path", systemImage: "doc.on.doc")
-                        }
-                        Button {
-                            let path = viewModel.fullPath(for: entry)
-                            NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: "")
-                        } label: {
-                            Label("Reveal in Finder", systemImage: "folder")
-                        }
-                        Button {
-                            editingID = entry.id
-                            editText = (entry.filename as NSString).deletingPathExtension
-                        } label: {
-                            Label("Edit Name", systemImage: "pencil")
-                        }
-                        Divider()
-                        Button(role: .destructive) {
-                            viewModel.delete(id: entry.id)
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
+                }
+                .onHover { hovering in
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        hoveredID = hovering ? entry.id : nil
                     }
-                    .onDrag {
-                        viewModel.onDragStarted?()
+                }
+                .onTapGesture {
+                    copyPath(for: entry)
+                }
+                .contextMenu {
+                    Button {
+                        copyPath(for: entry)
+                    } label: {
+                        Label("Copy Path", systemImage: "doc.on.doc")
+                    }
+                    Button {
+                        let path = viewModel.fullPath(for: entry)
+                        NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: "")
+                    } label: {
+                        Label("Reveal in Finder", systemImage: "folder")
+                    }
+                    Button {
+                        editingID = entry.id
+                        editText = (entry.filename as NSString).deletingPathExtension
+                    } label: {
+                        Label("Edit Name", systemImage: "pencil")
+                    }
+                    Divider()
+                    Button(role: .destructive) {
+                        viewModel.delete(id: entry.id)
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
+                .onDrag {
+                    viewModel.onDragStarted?()
 
-                        let url = URL(fileURLWithPath: viewModel.fullPath(for: entry))
-                        let provider = NSItemProvider()
-                        provider.suggestedName = entry.filename
+                    let url = URL(fileURLWithPath: viewModel.fullPath(for: entry))
+                    let provider = NSItemProvider()
+                    provider.suggestedName = entry.filename
 
-                        // Register file URL for Electron/browser drop targets
-                        // (they need public.file-url to create HTML5 File objects)
-                        provider.registerObject(url as NSURL, visibility: .all)
+                    // File URL for Electron/browser drop targets
+                    provider.registerObject(url as NSURL, visibility: .all)
 
-                        // Register raw PNG data for apps that accept image data directly
-                        if let imageData = try? Data(contentsOf: url) {
-                            provider.registerDataRepresentation(
-                                forTypeIdentifier: UTType.png.identifier,
-                                visibility: .all
-                            ) { completion in
-                                completion(imageData, nil)
-                                return nil
-                            }
-                        }
-
-                        // Register as file for file-system-aware apps (Finder, etc.)
-                        provider.registerFileRepresentation(
+                    // Raw PNG data for apps that accept image data directly
+                    if let imageData = try? Data(contentsOf: url) {
+                        provider.registerDataRepresentation(
                             forTypeIdentifier: UTType.png.identifier,
-                            fileOptions: [],
                             visibility: .all
                         ) { completion in
-                            completion(url, false, nil)
+                            completion(imageData, nil)
                             return nil
                         }
-                        return provider
                     }
+
+                    // File representation for file-system-aware apps (Finder, etc.)
+                    provider.registerFileRepresentation(
+                        forTypeIdentifier: UTType.png.identifier,
+                        fileOptions: [],
+                        visibility: .all
+                    ) { completion in
+                        completion(url, false, nil)
+                        return nil
+                    }
+
+                    // Plain text path for terminal apps (Terminal.app, iTerm2)
+                    let shellPath = url.path.replacingOccurrences(of: " ", with: "\\ ")
+                    provider.registerDataRepresentation(
+                        forTypeIdentifier: UTType.utf8PlainText.identifier,
+                        visibility: .all
+                    ) { completion in
+                        completion(shellPath.data(using: .utf8), nil)
+                        return nil
+                    }
+
+                    return provider
+                }
             }
 
             // Name
@@ -165,7 +224,6 @@ struct ImageGrabPopoverView: View {
                 TextField("Name", text: $editText)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 9))
-                    .frame(width: 120)
                     .onSubmit {
                         if !editText.isEmpty {
                             viewModel.rename(id: entry.id, to: editText)
@@ -190,24 +248,14 @@ struct ImageGrabPopoverView: View {
                         }
                 }
             }
+        }
+    }
 
-            // Copy Path button
-            Button {
-                viewModel.copyPath(for: entry)
-                copiedID = entry.id
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                    if copiedID == entry.id { copiedID = nil }
-                }
-            } label: {
-                HStack(spacing: 3) {
-                    Image(systemName: "doc.on.doc")
-                        .font(.system(size: 8))
-                    Text(copiedID == entry.id ? "Copied!" : "Copy Path")
-                        .font(.system(size: 9, weight: .medium))
-                }
-                .foregroundStyle(copiedID == entry.id ? .green : .accentColor)
-            }
-            .buttonStyle(.borderless)
+    private func copyPath(for entry: CaptureEntry) {
+        viewModel.copyPath(for: entry)
+        copiedID = entry.id
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            if copiedID == entry.id { copiedID = nil }
         }
     }
 }

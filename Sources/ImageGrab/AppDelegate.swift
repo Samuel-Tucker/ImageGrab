@@ -156,9 +156,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         }
 
-        // AI rename in background
+        // AI rename in background (vision model sees the actual screenshot)
+        let imagePath = captureStore.path(for: entry)
         Task {
-            if let suggestion = await aiRenamer.suggestName(for: entry.filename) {
+            let imageURL = URL(fileURLWithPath: imagePath)
+            if let suggestion = await aiRenamer.suggestName(for: entry.filename, imageURL: imageURL) {
                 captureStore.rename(id: entry.id, to: suggestion)
                 viewModel?.refresh()
             }

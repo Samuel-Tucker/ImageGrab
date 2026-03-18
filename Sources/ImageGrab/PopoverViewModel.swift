@@ -47,7 +47,7 @@ public final class PopoverViewModel: ObservableObject {
     }
 
     public func thumbnailImage(for entry: CaptureEntry) -> NSImage? {
-        store.thumbnail(for: entry)
+        store.thumbnail(for: entry, size: NSSize(width: 120, height: 120))
     }
 
     public func fullPath(for entry: CaptureEntry) -> String {
