@@ -38,6 +38,9 @@ public final class PopoverViewModel: ObservableObject {
     }
 
     public func rename(id: UUID, to name: String) {
+        if currentQuickViewEntryID == id {
+            dismissQuickView()
+        }
         store.rename(id: id, to: name)
         refresh()
     }

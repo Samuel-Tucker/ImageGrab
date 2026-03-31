@@ -5,6 +5,7 @@ final class QuickViewPanel: NSPanel, NSWindowDelegate {
 
     private let imageView = NSImageView()
     private var outsideClickMonitor: Any?
+    private var localClickMonitor: Any?
 
     init(image: NSImage, filename: String, screen: NSScreen?) {
         let contentRect = QuickViewPanel.contentRect(for: image.size, on: screen)
@@ -84,12 +85,21 @@ final class QuickViewPanel: NSPanel, NSWindowDelegate {
 
     private func startOutsideClickMonitor() {
         stopOutsideClickMonitor()
-        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
+        // Global monitor catches clicks outside the app
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             guard let self, self.isVisible else { return }
             let mouseLocation = NSEvent.mouseLocation
             if !self.frame.contains(mouseLocation) {
                 self.close()
             }
+        }
+        // Local monitor catches clicks inside the app but outside this panel
+        localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            guard let self, self.isVisible else { return event }
+            if event.window !== self {
+                self.close()
+            }
+            return event
         }
     }
 
@@ -97,6 +107,10 @@ final class QuickViewPanel: NSPanel, NSWindowDelegate {
         if let outsideClickMonitor {
             NSEvent.removeMonitor(outsideClickMonitor)
             self.outsideClickMonitor = nil
+        }
+        if let localClickMonitor {
+            NSEvent.removeMonitor(localClickMonitor)
+            self.localClickMonitor = nil
         }
     }
 
