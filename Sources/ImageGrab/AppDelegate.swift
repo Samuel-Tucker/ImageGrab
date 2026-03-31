@@ -161,8 +161,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         Task {
             let imageURL = URL(fileURLWithPath: imagePath)
             if let suggestion = await aiRenamer.suggestName(for: entry.filename, imageURL: imageURL) {
-                captureStore.rename(id: entry.id, to: suggestion)
-                viewModel?.refresh()
+                viewModel?.rename(id: entry.id, to: suggestion)
             }
         }
     }

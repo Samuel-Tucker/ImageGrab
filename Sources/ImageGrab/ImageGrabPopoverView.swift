@@ -45,7 +45,9 @@ struct ImageGrabPopoverView: View {
                         GridItem(.flexible())
                     ], spacing: 10) {
                         ForEach(viewModel.entries) { entry in
-                            captureCell(entry)
+                            captureCell(entry) {
+                                viewModel.showQuickView(for: entry)
+                            }
                         }
                     }
                     .padding(8)
@@ -109,7 +111,9 @@ struct ImageGrabPopoverView: View {
     }
 
     @ViewBuilder
-    private func captureCell(_ entry: CaptureEntry) -> some View {
+    private func captureCell(_ entry: CaptureEntry, onQuickView: @escaping () -> Void) -> some View {
+        let isHovered = hoveredID == entry.id
+
         VStack(spacing: 4) {
             // Thumbnail with hover-only copy overlay
             if let thumb = viewModel.thumbnailImage(for: entry) {
@@ -125,18 +129,30 @@ struct ImageGrabPopoverView: View {
                                 .stroke(copiedID == entry.id ? Color.green : Color.clear, lineWidth: 2)
                         )
 
-                    // Copy button — appears on hover
-                    if hoveredID == entry.id || copiedID == entry.id {
-                        Button {
-                            copyPath(for: entry)
-                        } label: {
-                            Image(systemName: copiedID == entry.id ? "checkmark.circle.fill" : "doc.on.doc")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(copiedID == entry.id ? .green : .white)
-                                .padding(5)
-                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 5))
+                    if isHovered || copiedID == entry.id {
+                        HStack(spacing: 6) {
+                            Button {
+                                onQuickView()
+                            } label: {
+                                Image(systemName: "eye")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 24, height: 24)
+                                    .background(Color.black.opacity(0.65), in: Circle())
+                            }
+                            .buttonStyle(.plain)
+
+                            Button {
+                                copyPath(for: entry)
+                            } label: {
+                                Image(systemName: copiedID == entry.id ? "checkmark.circle.fill" : "doc.on.doc")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(copiedID == entry.id ? .green : .white)
+                                    .padding(5)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 5))
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                         .padding(4)
                         .transition(.opacity)
                     }
