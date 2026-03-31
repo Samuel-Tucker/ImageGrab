@@ -5,7 +5,6 @@ final class QuickViewPanel: NSPanel, NSWindowDelegate {
 
     private let imageView = NSImageView()
     private var outsideClickMonitor: Any?
-    private var localClickMonitor: Any?
 
     init(image: NSImage, filename: String, screen: NSScreen?) {
         let contentRect = QuickViewPanel.contentRect(for: image.size, on: screen)
@@ -85,7 +84,9 @@ final class QuickViewPanel: NSPanel, NSWindowDelegate {
 
     private func startOutsideClickMonitor() {
         stopOutsideClickMonitor()
-        // Global monitor catches clicks outside the app
+        // Global monitor catches clicks outside the app (desktop, other apps)
+        // In-app clicks (popover eye button) are handled by the toggle logic
+        // in PopoverViewModel.showQuickView(for:), not by auto-dismissal
         outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             guard let self, self.isVisible else { return }
             let mouseLocation = NSEvent.mouseLocation
@@ -93,24 +94,12 @@ final class QuickViewPanel: NSPanel, NSWindowDelegate {
                 self.close()
             }
         }
-        // Local monitor catches clicks inside the app but outside this panel
-        localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
-            guard let self, self.isVisible else { return event }
-            if event.window !== self {
-                self.close()
-            }
-            return event
-        }
     }
 
     private func stopOutsideClickMonitor() {
         if let outsideClickMonitor {
             NSEvent.removeMonitor(outsideClickMonitor)
             self.outsideClickMonitor = nil
-        }
-        if let localClickMonitor {
-            NSEvent.removeMonitor(localClickMonitor)
-            self.localClickMonitor = nil
         }
     }
 
