@@ -21,6 +21,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusItem()
         setupPopover()
         registerHotKey()
+        DispatchQueue.main.async { [weak self] in
+            self?.refreshAccessibilityStatus()
+            self?.showAccessibilityHelpIfNeeded(prompt: true)
+        }
     }
 
     public func applicationWillTerminate(_ notification: Notification) {
@@ -41,7 +45,13 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setupPopover() {
-        let vm = PopoverViewModel(store: captureStore)
+        let vm = PopoverViewModel(
+            store: captureStore,
+            isAccessibilityTrusted: AccessibilityPermissionManager.isTrusted()
+        )
+        vm.onRequestAccessibilityAccess = { [weak self] in
+            self?.showAccessibilityHelpIfNeeded(prompt: true)
+        }
         viewModel = vm
 
         let p = NSPopover()
@@ -61,6 +71,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func togglePopover() {
         guard let popover, let button = statusItem?.button else { return }
+        refreshAccessibilityStatus()
         if popover.isShown {
             popover.performClose(nil)
         } else {
@@ -83,12 +94,18 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var clipboardPollTimer: Timer?
 
     private func startCapture() {
+        guard AccessibilityPermissionManager.isTrusted() else {
+            showAccessibilityHelpIfNeeded(prompt: true)
+            NSSound.beep()
+            return
+        }
+
         // Close popover if open
         popover?.performClose(nil)
 
         // Record current clipboard state, then simulate Cmd+Shift+Ctrl+4
         // This triggers the native macOS screenshot-to-clipboard crosshair.
-        // Requires Accessibility permission (persists across rebuilds), NOT Screen Recording.
+        // Requires Accessibility permission, NOT Screen Recording.
         let initialChangeCount = NSPasteboard.general.changeCount
 
         let source = CGEventSource(stateID: .hidSystemState)
@@ -164,6 +181,33 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 captureStore.rename(id: entry.id, to: suggestion)
                 viewModel?.refresh()
             }
+        }
+    }
+
+    private func refreshAccessibilityStatus() {
+        viewModel?.updateAccessibilityTrust(AccessibilityPermissionManager.isTrusted())
+    }
+
+    private func showAccessibilityHelpIfNeeded(prompt: Bool) {
+        let isTrusted = AccessibilityPermissionManager.isTrusted(prompt: prompt)
+        viewModel?.updateAccessibilityTrust(isTrusted)
+        guard !isTrusted else { return }
+
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Enable Accessibility for ImageGrab"
+        alert.informativeText = """
+        ImageGrab needs Accessibility access to trigger the macOS screenshot crosshair when you press Ctrl+Option+G.
+
+        macOS will list ImageGrab in Privacy & Security > Accessibility. Turn it on there, then return to ImageGrab and try again.
+        """
+        alert.addButton(withTitle: "Open Accessibility Settings")
+        alert.addButton(withTitle: "Not Now")
+
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            AccessibilityPermissionManager.openSettings()
         }
     }
 }

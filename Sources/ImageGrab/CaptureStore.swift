@@ -16,8 +16,16 @@ public final class CaptureStore {
     private let metadataURL: URL
 
     public init() {
-        let base = URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent("repos/ImageGrab/captures")
+        let appSupport = (try? FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )) ?? URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("Library/Application Support", isDirectory: true)
+        let base = appSupport
+            .appendingPathComponent("ImageGrab", isDirectory: true)
+            .appendingPathComponent("Captures", isDirectory: true)
         capturesDir = base
         metadataURL = base.appendingPathComponent(".metadata.json")
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
@@ -39,7 +47,7 @@ public final class CaptureStore {
     @discardableResult
     public func addCapture(image: NSImage) -> CaptureEntry? {
         let timestamp = Self.timestampFormatter.string(from: Date())
-        let filename = "capture-\(timestamp).png"
+        let filename = availableFilename(baseName: "capture-\(timestamp)", pathExtension: "png")
         let url = capturesDir.appendingPathComponent(filename)
 
         guard let tiffData = image.tiffRepresentation,
@@ -70,7 +78,11 @@ public final class CaptureStore {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
         let oldFilename = entries[index].filename
         let ext = (oldFilename as NSString).pathExtension
-        let newFilename = "\(newName).\(ext)"
+        let newFilename = availableFilename(
+            baseName: newName,
+            pathExtension: ext,
+            excluding: oldFilename
+        )
 
         let oldURL = capturesDir.appendingPathComponent(oldFilename)
         let newURL = capturesDir.appendingPathComponent(newFilename)
@@ -93,6 +105,10 @@ public final class CaptureStore {
 
     public func path(for entry: CaptureEntry) -> String {
         capturesDir.appendingPathComponent(entry.filename).path
+    }
+
+    public var capturesDirectoryURL: URL {
+        capturesDir
     }
 
     public func thumbnail(for entry: CaptureEntry, size: NSSize = NSSize(width: 60, height: 60)) -> NSImage? {
@@ -119,7 +135,31 @@ public final class CaptureStore {
 
     private static let timestampFormatter: DateFormatter = {
         let f = DateFormatter()
-        f.dateFormat = "yyyyMMdd-HHmmss"
+        f.dateFormat = "yyyyMMdd-HHmmss-SSS"
         return f
     }()
+
+    private func availableFilename(baseName: String, pathExtension: String, excluding existingFilename: String? = nil) -> String {
+        let sanitizedBaseName = Self.sanitizeBaseName(baseName)
+        let ext = pathExtension.isEmpty ? "" : ".\(pathExtension)"
+
+        var suffix = 1
+        var candidate = sanitizedBaseName + ext
+        while candidate != existingFilename &&
+                FileManager.default.fileExists(atPath: capturesDir.appendingPathComponent(candidate).path) {
+            suffix += 1
+            candidate = "\(sanitizedBaseName)-\(suffix)\(ext)"
+        }
+        return candidate
+    }
+
+    private static func sanitizeBaseName(_ rawValue: String) -> String {
+        let invalidCharacters = CharacterSet(charactersIn: "/:\\")
+        let cleaned = rawValue
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: invalidCharacters)
+            .joined(separator: "-")
+
+        return cleaned.isEmpty ? "capture" : cleaned
+    }
 }

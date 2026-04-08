@@ -23,6 +23,11 @@ struct ImageGrabPopoverView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
 
+            if !viewModel.isAccessibilityTrusted {
+                Divider()
+                accessibilityBanner
+            }
+
             Divider()
 
             if viewModel.entries.isEmpty {
@@ -32,7 +37,9 @@ struct ImageGrabPopoverView: View {
                         .foregroundStyle(.secondary)
                     Text("No captures yet")
                         .foregroundStyle(.secondary)
-                    Text("Copy an image, then press ctl+opt+G")
+                    Text(viewModel.isAccessibilityTrusted
+                         ? "Press Ctrl+Option+G to start a capture"
+                         : "Enable Accessibility, then press Ctrl+Option+G")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
@@ -106,6 +113,23 @@ struct ImageGrabPopoverView: View {
             .padding(.vertical, 6)
         }
         .frame(width: 300, height: 400)
+    }
+
+    private var accessibilityBanner: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Accessibility Required")
+                .font(.headline)
+            Text("Turn on Accessibility for ImageGrab to use the global hotkey and start captures.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button("Enable Accessibility") {
+                viewModel.requestAccessibilityAccess()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
     }
 
     @ViewBuilder

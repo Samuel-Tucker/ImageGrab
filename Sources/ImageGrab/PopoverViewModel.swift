@@ -4,14 +4,17 @@ import Foundation
 @MainActor
 public final class PopoverViewModel: ObservableObject {
     @Published public var entries: [CaptureEntry] = []
+    @Published public var isAccessibilityTrusted: Bool
 
     /// Called when a drag starts so the popover can stay open during the session
     public var onDragStarted: (() -> Void)?
+    public var onRequestAccessibilityAccess: (() -> Void)?
 
     private let store: CaptureStore
 
-    public init(store: CaptureStore) {
+    public init(store: CaptureStore, isAccessibilityTrusted: Bool) {
         self.store = store
+        self.isAccessibilityTrusted = isAccessibilityTrusted
         self.entries = store.entries
     }
 
@@ -41,9 +44,15 @@ public final class PopoverViewModel: ObservableObject {
     }
 
     public func openFolder() {
-        let url = URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent("repos/ImageGrab/captures")
-        NSWorkspace.shared.open(url)
+        NSWorkspace.shared.open(store.capturesDirectoryURL)
+    }
+
+    public func requestAccessibilityAccess() {
+        onRequestAccessibilityAccess?()
+    }
+
+    public func updateAccessibilityTrust(_ isTrusted: Bool) {
+        isAccessibilityTrusted = isTrusted
     }
 
     public func thumbnailImage(for entry: CaptureEntry) -> NSImage? {
