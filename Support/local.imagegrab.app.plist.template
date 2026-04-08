@@ -10,7 +10,9 @@
     </array>
     <key>ProgramArguments</key>
     <array>
-        <string>__IMAGEGRAB_EXECUTABLE__</string>
+        <string>/usr/bin/open</string>
+        <string>-gj</string>
+        <string>__IMAGEGRAB_APP__</string>
     </array>
     <key>RunAtLoad</key>
     <true/>

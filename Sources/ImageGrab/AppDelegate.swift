@@ -4,6 +4,10 @@ import SwiftUI
 
 @MainActor
 public final class AppDelegate: NSObject, NSApplicationDelegate {
+    private enum DefaultsKeys {
+        static let accessibilityPrompted = "ImageGrab.accessibilityPrompted"
+    }
+
     private let captureStore = CaptureStore()
     private let aiRenamer = AIRenamer()
     private let hotKeyManager = GlobalHotKeyManager()
@@ -23,7 +27,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         registerHotKey()
         DispatchQueue.main.async { [weak self] in
             self?.refreshAccessibilityStatus()
-            self?.showAccessibilityHelpIfNeeded(prompt: true)
+            self?.showAccessibilityHelpIfNeeded(promptSystem: self?.shouldPromptForAccessibility() ?? false)
         }
     }
 
@@ -50,7 +54,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             isAccessibilityTrusted: AccessibilityPermissionManager.isTrusted()
         )
         vm.onRequestAccessibilityAccess = { [weak self] in
-            self?.showAccessibilityHelpIfNeeded(prompt: true)
+            self?.showAccessibilityHelpIfNeeded(promptSystem: true)
         }
         viewModel = vm
 
@@ -95,7 +99,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startCapture() {
         guard AccessibilityPermissionManager.isTrusted() else {
-            showAccessibilityHelpIfNeeded(prompt: true)
+            showAccessibilityHelpIfNeeded(promptSystem: false)
             NSSound.beep()
             return
         }
@@ -185,11 +189,23 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshAccessibilityStatus() {
-        viewModel?.updateAccessibilityTrust(AccessibilityPermissionManager.isTrusted())
+        let isTrusted = AccessibilityPermissionManager.isTrusted()
+        if isTrusted {
+            UserDefaults.standard.set(true, forKey: DefaultsKeys.accessibilityPrompted)
+        }
+        viewModel?.updateAccessibilityTrust(isTrusted)
     }
 
-    private func showAccessibilityHelpIfNeeded(prompt: Bool) {
-        let isTrusted = AccessibilityPermissionManager.isTrusted(prompt: prompt)
+    private func shouldPromptForAccessibility() -> Bool {
+        guard !AccessibilityPermissionManager.isTrusted() else { return false }
+        return !UserDefaults.standard.bool(forKey: DefaultsKeys.accessibilityPrompted)
+    }
+
+    private func showAccessibilityHelpIfNeeded(promptSystem: Bool) {
+        let isTrusted = AccessibilityPermissionManager.isTrusted(prompt: promptSystem)
+        if promptSystem {
+            UserDefaults.standard.set(true, forKey: DefaultsKeys.accessibilityPrompted)
+        }
         viewModel?.updateAccessibilityTrust(isTrusted)
         guard !isTrusted else { return }
 

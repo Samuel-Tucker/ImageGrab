@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_DIR="$HOME/Applications/ImageGrab.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
+RESOURCES_DIR="$CONTENTS_DIR/Resources"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 LAUNCH_AGENT_LABEL="local.imagegrab.app"
 LAUNCH_AGENT_TEMPLATE="$ROOT_DIR/Support/$LAUNCH_AGENT_LABEL.plist.template"
@@ -13,11 +14,14 @@ SIGNING_IDENTITY="${IMAGEGRAB_CODESIGN_IDENTITY:-ImageGrab Dev}"
 INSTALL_LAUNCH_AGENT="${IMAGEGRAB_INSTALL_LAUNCH_AGENT:-1}"
 
 cd "$ROOT_DIR"
+./Scripts/generate_app_icon.swift
 swift build -c release
 
 mkdir -p "$MACOS_DIR"
+mkdir -p "$RESOURCES_DIR"
 cp "$ROOT_DIR/.build/release/ImageGrab" "$MACOS_DIR/ImageGrab"
 cp "$ROOT_DIR/Support/Info.plist" "$CONTENTS_DIR/Info.plist"
+cp "$ROOT_DIR/Support/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
 
 if security find-identity -v -p codesigning | grep -Fq "$SIGNING_IDENTITY"; then
   codesign --force --deep --sign "$SIGNING_IDENTITY" "$APP_DIR"
@@ -29,7 +33,7 @@ fi
 
 if [[ "$INSTALL_LAUNCH_AGENT" == "1" ]]; then
   mkdir -p "$LAUNCH_AGENTS_DIR"
-  sed "s#__IMAGEGRAB_EXECUTABLE__#$MACOS_DIR/ImageGrab#g" "$LAUNCH_AGENT_TEMPLATE" > "$LAUNCH_AGENT_DEST"
+  sed "s#__IMAGEGRAB_APP__#$APP_DIR#g" "$LAUNCH_AGENT_TEMPLATE" > "$LAUNCH_AGENT_DEST"
   plutil -lint "$LAUNCH_AGENT_DEST" >/dev/null
 
   USER_ID="$(id -u)"
