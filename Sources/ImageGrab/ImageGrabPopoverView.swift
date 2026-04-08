@@ -13,8 +13,13 @@ struct ImageGrabPopoverView: View {
         VStack(spacing: 0) {
             // Header
             HStack {
-                Text("ImageGrab")
-                    .font(.headline)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("ImageGrab")
+                        .font(.headline)
+                    Text("Hotkey: Ctrl+Option+G")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
                 Spacer()
                 Text("\(viewModel.entries.count) captures")
                     .font(.caption)
