@@ -26,10 +26,10 @@ A lightweight macOS menu bar app for screen captures with built-in annotation to
 ## Requirements
 
 - macOS 13+
-- Screen Recording permission
 - Accessibility permission (for global hotkey)
+- No Screen Recording permission needed when using the native macOS screenshot crosshair
 
-## Build
+## Build & Install
 
 ```sh
 git clone https://github.com/Samuel-Tucker/ImageGrab.git
@@ -37,7 +37,14 @@ cd ImageGrab
 ./Scripts/build_app.sh
 ```
 
-Installs to `~/Applications/ImageGrab.app` as a menu-bar-only app (no Dock icon).
+The build script:
+
+- Installs `ImageGrab.app` to `~/Applications`
+- Registers the app with Launch Services so it appears in Spotlight
+- Installs a per-user LaunchAgent so the app starts on login
+- Ad-hoc signs the app by default, or uses `IMAGEGRAB_CODESIGN_IDENTITY` if you provide a local signing identity
+
+On first launch, ImageGrab prompts for Accessibility access and opens the correct System Settings screen.
 
 ## Usage
 
@@ -47,7 +54,9 @@ Installs to `~/Applications/ImageGrab.app` as a menu-bar-only app (no Dock icon)
 4. Click **Save & Copy Path** (or just **Save**)
 5. Find captures in the popover grid — click thumbnails to copy paths, or drag them into other apps
 
-Captures are stored in `~/repos/ImageGrab/captures/`.
+Captures are stored in `~/Library/Application Support/ImageGrab/Captures/`.
+
+If you dismiss the Accessibility prompt, open the menu bar popover and click **Enable Accessibility** to jump back to the correct settings pane.
 
 ## Keyboard Shortcuts
 
