@@ -19,6 +19,11 @@ let package = Package(
             name: "ImageGrab",
             dependencies: ["ImageGrabKit"],
             path: "Sources/ImageGrabApp"
+        ),
+        .testTarget(
+            name: "ImageGrabKitTests",
+            dependencies: ["ImageGrabKit"],
+            path: "Tests/ImageGrabKitTests"
         )
     ]
 )

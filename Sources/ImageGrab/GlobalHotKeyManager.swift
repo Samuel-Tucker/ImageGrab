@@ -32,7 +32,7 @@ final class GlobalHotKeyManager {
             keyCode,
             modifiers,
             hotKeyID,
-            GetEventDispatcherTarget(),
+            GetApplicationEventTarget(),
             0,
             &hotKeyRef
         )
@@ -70,7 +70,7 @@ final class GlobalHotKeyManager {
         }
 
         let status = InstallEventHandler(
-            GetEventDispatcherTarget(),
+            GetApplicationEventTarget(),
             callback,
             1,
             &eventSpec,

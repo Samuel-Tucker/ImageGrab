@@ -8,6 +8,7 @@ final class CapturePreviewWindow: NSWindow {
     private let capturedImage: NSImage
     private var annotationOverlay: AnnotationOverlayView!
     private var undoBtn: NSButton!
+    private var textBackgroundColorWell: NSColorWell!
     private var colorButtons: [NSButton] = []
 
     private let presetColors: [NSColor] = [.systemRed, .systemBlue, .systemGreen, .systemYellow, .white]
@@ -151,6 +152,24 @@ final class CapturePreviewWindow: NSWindow {
         bar.addSubview(sep2)
         x += 13
 
+        // Text background color
+        let textBgWell = NSColorWell(frame: NSRect(x: x, y: 6, width: 28, height: 28))
+        textBgWell.color = annotationOverlay.currentTextBackgroundColor
+        textBgWell.toolTip = "Text background color"
+        if #available(macOS 13.0, *) {
+            textBgWell.colorWellStyle = .minimal
+        }
+        textBgWell.target = self
+        textBgWell.action = #selector(textBackgroundColorChanged(_:))
+        textBackgroundColorWell = textBgWell
+        bar.addSubview(textBgWell)
+        x += 34
+
+        // Separator
+        let sep3 = separatorView(at: x, height: 24, y: 8)
+        bar.addSubview(sep3)
+        x += 13
+
         // Undo button
         let undo = NSButton(frame: NSRect(x: x, y: 6, width: 28, height: 28))
         undo.image = NSImage(systemSymbolName: "arrow.uturn.backward", accessibilityDescription: "Undo")!
@@ -255,6 +274,10 @@ final class CapturePreviewWindow: NSWindow {
                 btn.layer?.borderWidth = 1
             }
         }
+    }
+
+    @objc private func textBackgroundColorChanged(_ sender: NSColorWell) {
+        annotationOverlay.currentTextBackgroundColor = sender.color
     }
 
     @objc private func undoClicked() {

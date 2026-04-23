@@ -9,6 +9,10 @@ public final class PopoverViewModel: ObservableObject {
     /// Called when a drag starts so the popover can stay open during the session
     public var onDragStarted: (() -> Void)?
 
+    /// Called to keep/release the popover while quick view is open
+    public var onQuickViewOpened: (() -> Void)?
+    public var onQuickViewClosed: (() -> Void)?
+
     private let store: CaptureStore
     private var currentQuickViewPanel: QuickViewPanel?
     private var currentQuickViewEntryID: UUID?
@@ -33,6 +37,7 @@ public final class PopoverViewModel: ObservableObject {
         if currentQuickViewEntryID == id {
             dismissQuickView()
         }
+        store.invalidateThumbnail(for: id)
         store.delete(id: id)
         refresh()
     }
@@ -41,6 +46,7 @@ public final class PopoverViewModel: ObservableObject {
         if currentQuickViewEntryID == id {
             dismissQuickView()
         }
+        store.invalidateThumbnail(for: id)
         store.rename(id: id, to: name)
         refresh()
     }
@@ -57,8 +63,9 @@ public final class PopoverViewModel: ObservableObject {
         NSWorkspace.shared.open(url)
     }
 
-    public func thumbnailImage(for entry: CaptureEntry) -> NSImage? {
-        store.thumbnail(for: entry, size: NSSize(width: 120, height: 120))
+    public func thumbnailImage(for entry: CaptureEntry) async -> NSImage? {
+        let url = store.thumbnailURL(for: entry)
+        return await store.thumbnailAsync(for: url, id: entry.id)
     }
 
     public func fullPath(for entry: CaptureEntry) -> String {
@@ -96,6 +103,7 @@ public final class PopoverViewModel: ObservableObject {
 
         currentQuickViewPanel = panel
         panel.show()
+        onQuickViewOpened?()
     }
 
     public func dismissQuickView() {
@@ -136,6 +144,7 @@ public final class PopoverViewModel: ObservableObject {
     private func clearQuickViewReferences() {
         currentQuickViewPanel = nil
         currentQuickViewEntryID = nil
+        onQuickViewClosed?()
     }
 
     private func activeScreen() -> NSScreen? {

@@ -3,14 +3,14 @@ import Carbon
 import SwiftUI
 
 @MainActor
-public final class AppDelegate: NSObject, NSApplicationDelegate {
+public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let captureStore = CaptureStore()
-    private let aiRenamer = AIRenamer()
-    private let hotKeyManager = GlobalHotKeyManager()
+    private var hotKeyManager: GlobalHotKeyManager?
     private var viewModel: PopoverViewModel?
 
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
+    private var popoverKeyDownMonitor: Any?
     private var previewWindow: CapturePreviewWindow?
 
     public override init() {
@@ -24,7 +24,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     public func applicationWillTerminate(_ notification: Notification) {
-        hotKeyManager.unregisterAll()
+        removePopoverKeyDownMonitor()
+        hotKeyManager?.unregisterAll()
     }
 
     private func setupStatusItem() {
@@ -47,7 +48,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         let p = NSPopover()
         p.contentSize = NSSize(width: 300, height: 400)
         p.behavior = .transient
-        p.contentViewController = NSHostingController(rootView: ImageGrabPopoverView(viewModel: vm))
+        p.delegate = self
+        p.contentViewController = NSHostingController(
+            rootView: ImageGrabPopoverView(viewModel: vm) { [weak self] in
+                self?.closePopover()
+            }
+        )
         popover = p
 
         // Keep popover open during drag sessions so cross-app drops work
@@ -57,34 +63,79 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.popover?.behavior = .transient
             }
         }
+
+        // Keep popover open while quick view panel is showing
+        vm.onQuickViewOpened = { [weak self] in
+            self?.popover?.behavior = .applicationDefined
+        }
+        vm.onQuickViewClosed = { [weak self] in
+            self?.popover?.behavior = .transient
+        }
     }
 
     @objc private func togglePopover() {
         guard let popover, let button = statusItem?.button else { return }
         if popover.isShown {
-            popover.performClose(nil)
+            closePopover()
         } else {
-            viewModel?.refresh()
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            showPopover(relativeTo: button)
         }
+    }
+
+    private func showPopover(relativeTo button: NSStatusBarButton) {
+        guard let popover else { return }
+        viewModel?.refresh()
+        installPopoverKeyDownMonitor()
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+    }
+
+    private func closePopover() {
+        popover?.performClose(nil)
+        removePopoverKeyDownMonitor()
+    }
+
+    public func popoverDidClose(_ notification: Notification) {
+        removePopoverKeyDownMonitor()
+    }
+
+    private func installPopoverKeyDownMonitor() {
+        guard popoverKeyDownMonitor == nil else { return }
+        popoverKeyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53 {
+                Task { @MainActor in
+                    self?.closePopover()
+                }
+                return nil
+            }
+            return event
+        }
+    }
+
+    private func removePopoverKeyDownMonitor() {
+        guard let monitor = popoverKeyDownMonitor else { return }
+        NSEvent.removeMonitor(monitor)
+        popoverKeyDownMonitor = nil
     }
 
     private func registerHotKey() {
         // Ctrl+Opt+G
+        let manager = GlobalHotKeyManager()
+        hotKeyManager = manager
         let modifiers = UInt32(controlKey | optionKey)
         let keyCode = UInt32(kVK_ANSI_G)
-        _ = hotKeyManager.register(keyCode: keyCode, modifiers: modifiers) { [weak self] in
+        let registered = manager.register(keyCode: keyCode, modifiers: modifiers) { [weak self] in
             Task { @MainActor in
                 self?.startCapture()
             }
         }
+        NSLog("ImageGrab: hotkey registration \(registered ? "succeeded" : "FAILED")")
     }
 
     private var clipboardPollTimer: Timer?
 
     private func startCapture() {
         // Close popover if open
-        popover?.performClose(nil)
+        closePopover()
 
         // Record current clipboard state, then simulate Cmd+Shift+Ctrl+4
         // This triggers the native macOS screenshot-to-clipboard crosshair.
@@ -153,16 +204,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Show popover as feedback
         if let button = statusItem?.button, let popover, !popover.isShown {
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        }
-
-        // AI rename in background (vision model sees the actual screenshot)
-        let imagePath = captureStore.path(for: entry)
-        Task {
-            let imageURL = URL(fileURLWithPath: imagePath)
-            if let suggestion = await aiRenamer.suggestName(for: entry.filename, imageURL: imageURL) {
-                viewModel?.rename(id: entry.id, to: suggestion)
-            }
+            showPopover(relativeTo: button)
         }
     }
 }

@@ -1,6 +1,6 @@
 # ImageGrab
 
-A lightweight macOS menu bar app for screen captures with built-in annotation tools, AI-powered renaming, and drag-and-drop sharing.
+A lightweight macOS menu bar app for fast native screenshots, quick markup, and drag-and-drop sharing.
 
 ## Screenshots
 
@@ -15,37 +15,41 @@ A lightweight macOS menu bar app for screen captures with built-in annotation to
 ## Features
 
 - **Global hotkey** — Press `Ctrl+Opt+G` from anywhere to trigger the native macOS screenshot crosshair
-- **Preview before saving** — Review your capture, annotate it, then Save or Save & Copy Path
-- **Annotation tools** — Draw with pen, box, arrow, and text tools across 5 color presets
-- **Thumbnail grid** — Browse recent captures in a menu bar popover (up to 50)
-- **Drag and drop** — Drag images from the popover directly into any app (Slack, browsers, editors, etc.)
-- **AI auto-rename** — Generates descriptive filenames using a local vision model (see [AI Rename](#ai-auto-rename) below)
-- **Inline rename** — Click any filename to edit it; AI-named files are marked with a sparkles icon
-- **Context menu** — Right-click any capture to copy path, reveal in Finder, rename, or delete
+- **Preview before saving** — Review every capture before it is written to disk
+- **Annotation tools** — Pen, box, arrow, and text with color presets plus a text background picker
+- **Movable annotations** — Click existing text, boxes, arrows, or pen strokes to reposition them
+- **Editable text markup** — Click text annotations to reopen editing, then adjust font size with `Cmd+=`, `Cmd+-`, or the scroll wheel
+- **Quick view panel** — Hover a thumbnail and click the eye icon for a floating larger preview
+- **Thumbnail grid** — Browse up to 50 recent captures from the menu bar popover
+- **Drag and drop** — Drag captures into Slack, browsers, Finder, terminals, and Electron apps
+- **Inline rename** — Click a filename or use the context menu to rename captures in place
+- **Context menu** — Copy path, reveal in Finder, rename, or delete any capture
+- **Efficient output** — Saves WebP when available on the host macOS version and falls back to PNG otherwise
 
 ## Requirements
 
 - macOS 13+
-- Screen Recording permission
-- Accessibility permission (for global hotkey)
+- Accessibility permission for the global hotkey and native screenshot trigger
+
+ImageGrab uses the built-in macOS screenshot tool, so it does not require a separate Screen Recording permission prompt in the app itself.
 
 ## Build
 
 ```sh
-git clone https://github.com/Samuel-Tucker/ImageGrab.git
+git clone https://github.com/Pricing-Logic/ImageGrab.git
 cd ImageGrab
 ./Scripts/build_app.sh
 ```
 
-Installs to `~/Applications/ImageGrab.app` as a menu-bar-only app (no Dock icon).
+The build script creates `~/Applications/ImageGrab.app`, registers it with Launch Services, and attempts to codesign it with the local `ImageGrab Dev` identity if that certificate exists.
 
 ## Usage
 
-1. Press **Ctrl+Opt+G** (or click the camera icon in the menu bar)
-2. Select a screen region with the crosshair
-3. Annotate if needed — pick a tool and color from the toolbar
-4. Click **Save & Copy Path** (or just **Save**)
-5. Find captures in the popover grid — click thumbnails to copy paths, or drag them into other apps
+1. Press `Ctrl+Opt+G` or click the menu bar icon.
+2. Select a screen region with the native macOS crosshair.
+3. Annotate in the preview window if needed.
+4. Click `Save` or `Save & Copy Path`.
+5. Use the menu bar popover to copy paths, rename files, quick-view images, or drag captures into other apps.
 
 Captures are stored in `~/repos/ImageGrab/captures/`.
 
@@ -54,54 +58,11 @@ Captures are stored in `~/repos/ImageGrab/captures/`.
 | Shortcut | Action |
 |----------|--------|
 | `Ctrl+Opt+G` | Start capture |
-| `Cmd+Z` | Undo annotation |
-| `Esc` | Cancel capture / dismiss text |
-| `Return` | Save & Copy Path |
-| `Scroll wheel` | Adjust text size (text tool) |
-
-## AI Auto-Rename
-
-ImageGrab can automatically rename screenshots with descriptive filenames (e.g. `api-reference-docs.png` instead of `capture-20260318-112738.png`). This is an **optional feature** that requires a local AI vision model.
-
-### How it works
-
-After each capture, ImageGrab sends the screenshot to a local [Ollama](https://ollama.com) vision model that looks at the image and suggests a short, descriptive name. The rename happens in the background — if no model is available, the timestamp name is kept.
-
-### Setup
-
-1. **Install Ollama** (if you don't have it):
-   ```sh
-   brew install ollama
-   ```
-
-2. **Pull the moondream model** (~1.7GB download):
-   ```sh
-   ollama pull moondream
-   ```
-
-3. **Make sure Ollama is running:**
-   ```sh
-   ollama serve
-   ```
-   Or launch the Ollama app — it runs in the menu bar.
-
-That's it. ImageGrab will detect Ollama automatically on `localhost:11434`.
-
-### Model details
-
-| | |
-|---|---|
-| **Model** | [moondream](https://ollama.com/library/moondream) (1.8B params) |
-| **Disk** | ~1.7 GB |
-| **RAM** | ~1.1 GB (runs on GPU via Metal) |
-| **Speed** | 1-3 seconds per rename |
-| **Privacy** | Fully local — no images leave your machine |
-
-The model is **not** always in memory — Ollama loads it on demand when a rename is triggered, then automatically unloads it after 5 minutes of inactivity. Any Mac with 8GB+ RAM can run moondream alongside ImageGrab without issues.
-
-### Fallback
-
-If Ollama is not installed or the model isn't available, ImageGrab falls back to [kimi-cli](https://github.com/anthropics/kimi-cli) (text-only, less accurate). If neither is available, files keep their timestamp names — the app works fine without AI rename.
+| `Cmd+Z` | Undo the last committed annotation |
+| `Esc` | Cancel capture, clear selection, or finish text editing |
+| `Return` | Save & Copy Path from the preview window |
+| `Cmd+=` / `Cmd+-` | Increase or decrease selected text size |
+| `Scroll wheel` | Adjust text size while using or editing the text tool |
 
 ## Tech Stack
 
