@@ -5,7 +5,7 @@
     <key>CFBundleDevelopmentRegion</key><string>en</string>
     <key>CFBundleDisplayName</key><string>ImageGrab</string>
     <key>CFBundleExecutable</key><string>ImageGrab</string>
-    <key>CFBundleIdentifier</key><string>local.imagegrab.app</string>
+    <key>CFBundleIdentifier</key><string>com.samueltucker.imagegrab</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
     <key>CFBundleName</key><string>ImageGrab</string>
     <key>CFBundlePackageType</key><string>APPL</string>

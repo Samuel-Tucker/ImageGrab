@@ -33,10 +33,21 @@ A lightweight macOS menu bar app for fast native screenshots, quick markup, and 
 
 ImageGrab uses the built-in macOS screenshot tool, so it does not require a separate Screen Recording permission prompt in the app itself.
 
+## Install
+
+For end users, the intended install path is a signed and notarized app download from GitHub Releases:
+
+- `.zip` for direct app extraction
+- `.dmg` for drag-to-Applications install
+
+Release artifacts are published at:
+
+`https://github.com/Samuel-Tucker/ImageGrab/releases`
+
 ## Build
 
 ```sh
-git clone https://github.com/Pricing-Logic/ImageGrab.git
+git clone https://github.com/Samuel-Tucker/ImageGrab.git
 cd ImageGrab
 ./Scripts/build_app.sh
 ```
@@ -67,6 +78,16 @@ Captures are stored in `~/repos/ImageGrab/captures/`.
 ## Tech Stack
 
 Swift 6 · SwiftUI · AppKit · Swift Package Manager · Carbon hotkey API
+
+## Releasing
+
+Maintainers can build signed and notarized release artifacts with:
+
+```sh
+./Scripts/build_release_assets.sh v0.1.0
+```
+
+The GitHub Actions release workflow publishes `.zip`, `.dmg`, and checksum assets from version tags. Full setup details are in [docs/releasing.md](docs/releasing.md).
 
 ## License
 
