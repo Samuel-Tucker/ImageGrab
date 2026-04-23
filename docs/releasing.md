@@ -1,8 +1,23 @@
 # Releasing ImageGrab
 
-This repo now supports signed and notarized GitHub Releases that publish both a `.zip` and a `.dmg` for the app.
+This repo supports GitHub Releases that publish both a `.zip` and a `.dmg` for the app.
 
-## What the release flow does
+## Release modes
+
+### Unsigned mode
+
+If Apple secrets are not configured, the GitHub Actions release job still:
+
+1. Builds the app bundle
+2. Creates a `.zip`
+3. Creates a drag-install `.dmg`
+4. Uploads `.zip`, `.dmg`, and checksums to GitHub Releases
+
+This is the best no-Apple-account distribution path. Users may need to right-click the app and choose **Open** on first launch, or remove the quarantine attribute manually.
+
+### Signed and notarized mode
+
+If Apple secrets are configured, the release flow additionally:
 
 1. Builds the release app bundle.
 2. Stamps the app with the release version and build number.
@@ -13,7 +28,7 @@ This repo now supports signed and notarized GitHub Releases that publish both a 
 7. Signs and notarizes the `.dmg`.
 8. Uploads the `.zip`, `.dmg`, and checksums to GitHub Releases.
 
-## Required GitHub Actions secrets
+## Required GitHub Actions secrets for signed/notarized releases
 
 - `DEVELOPER_ID_APPLICATION`
   Example: `Developer ID Application: Your Name (TEAMID)`
@@ -43,6 +58,8 @@ That triggers `.github/workflows/release.yml`, which builds and publishes:
 - `ImageGrab-0.1.0.dmg`
 - `SHA256SUMS`
 
+If Apple secrets are absent, the workflow publishes an unsigned release and the GitHub Release notes include first-launch instructions for macOS Gatekeeper.
+
 ## Local dry run
 
 Build unsigned local release artifacts:
@@ -64,7 +81,9 @@ APPLE_API_PRIVATE_KEY="$(cat ~/AuthKey_ABC123XYZ.p8)" \
 
 Artifacts are written to `dist/<version>/`.
 
-## Optional Homebrew cask follow-on
+## Homebrew cask follow-on
+
+Only do this once you are regularly shipping signed/notarized releases. A Homebrew cask does not solve Gatekeeper warnings for unsigned apps, so it is not the first move to optimize.
 
 After a release artifact exists, generate a cask snippet:
 

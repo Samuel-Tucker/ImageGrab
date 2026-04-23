@@ -21,7 +21,27 @@ jobs:
           echo "RELEASE_TAG=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
           echo "RELEASE_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
+      - name: Select release mode
+        env:
+          DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: |
+          if [[ -n "$DEVELOPER_ID_APPLICATION" && -n "$MACOS_CERTIFICATE_P12_BASE64" && -n "$MACOS_CERTIFICATE_PASSWORD" && -n "$APPLE_API_KEY_ID" && -n "$APPLE_API_ISSUER_ID" && -n "$APPLE_API_PRIVATE_KEY" ]]; then
+            echo "SIGN_IDENTITY=$DEVELOPER_ID_APPLICATION" >> "$GITHUB_ENV"
+            echo "NOTARIZE=1" >> "$GITHUB_ENV"
+            echo "RELEASE_SECURITY_LABEL=signed and notarized" >> "$GITHUB_ENV"
+          else
+            echo "SIGN_IDENTITY=none" >> "$GITHUB_ENV"
+            echo "NOTARIZE=0" >> "$GITHUB_ENV"
+            echo "RELEASE_SECURITY_LABEL=unsigned" >> "$GITHUB_ENV"
+          fi
+
       - name: Import Developer ID certificate
+        if: env.NOTARIZE == '1'
         env:
           KEYCHAIN_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
           MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
@@ -41,17 +61,51 @@ jobs:
 
       - name: Build, sign, and notarize release artifacts
         env:
-          SIGN_IDENTITY: ${{ secrets.DEVELOPER_ID_APPLICATION }}
-          NOTARIZE: "1"
+          SIGN_IDENTITY: ${{ env.SIGN_IDENTITY }}
+          NOTARIZE: ${{ env.NOTARIZE }}
           BUILD_NUMBER: ${{ github.run_number }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
           APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
         run: ./Scripts/build_release_assets.sh "${RELEASE_TAG}"
 
+      - name: Write release notes
+        run: |
+          cat > "$RUNNER_TEMP/release-notes.md" <<EOF
+          ## Install
+
+          Download \`ImageGrab-${RELEASE_VERSION}.dmg\` for the simplest install, or use the zip if you prefer.
+
+          Release security status: **${RELEASE_SECURITY_LABEL}**
+
+          EOF
+
+          if [[ "$NOTARIZE" == "1" ]]; then
+            cat >> "$RUNNER_TEMP/release-notes.md" <<EOF
+          This release should open normally on macOS.
+          EOF
+          else
+            cat >> "$RUNNER_TEMP/release-notes.md" <<EOF
+          Because this release is not signed or notarized, macOS may block the first launch.
+
+          If that happens:
+
+          1. Move \`ImageGrab.app\` to \`/Applications\`
+          2. Right-click the app and choose **Open**
+          3. Confirm the warning once
+
+          If Finder still blocks it, run:
+
+          \`\`\`sh
+          xattr -dr com.apple.quarantine /Applications/ImageGrab.app
+          \`\`\`
+          EOF
+          fi
+
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
+          body_path: ${{ runner.temp }}/release-notes.md
           files: |
             dist/${{ env.RELEASE_VERSION }}/ImageGrab-${{ env.RELEASE_VERSION }}-macOS.zip
             dist/${{ env.RELEASE_VERSION }}/ImageGrab-${{ env.RELEASE_VERSION }}.dmg

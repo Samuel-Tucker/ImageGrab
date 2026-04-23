@@ -35,7 +35,7 @@ ImageGrab uses the built-in macOS screenshot tool, so it does not require a sepa
 
 ## Install
 
-For end users, the intended install path is a signed and notarized app download from GitHub Releases:
+For end users, the simplest install path is a GitHub Release download:
 
 - `.zip` for direct app extraction
 - `.dmg` for drag-to-Applications install
@@ -43,6 +43,20 @@ For end users, the intended install path is a signed and notarized app download 
 Release artifacts are published at:
 
 `https://github.com/Samuel-Tucker/ImageGrab/releases`
+
+### Current macOS note
+
+Without Apple Developer signing/notarization, macOS may warn on first launch. The simplest path is:
+
+1. Download the `.dmg`
+2. Drag `ImageGrab.app` into `/Applications`
+3. Right-click the app and choose **Open** once
+
+If macOS still blocks launch, remove quarantine manually:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/ImageGrab.app
+```
 
 ## Build
 
@@ -81,13 +95,13 @@ Swift 6 · SwiftUI · AppKit · Swift Package Manager · Carbon hotkey API
 
 ## Releasing
 
-Maintainers can build signed and notarized release artifacts with:
+Maintainers can build release artifacts with:
 
 ```sh
 ./Scripts/build_release_assets.sh v0.1.0
 ```
 
-The GitHub Actions release workflow publishes `.zip`, `.dmg`, and checksum assets from version tags. Full setup details are in [docs/releasing.md](docs/releasing.md).
+With Apple credentials configured, the workflow signs and notarizes the app. Without them, it still publishes usable unsigned `.zip` and `.dmg` assets from version tags. Full setup details are in [docs/releasing.md](docs/releasing.md).
 
 ## License
 
