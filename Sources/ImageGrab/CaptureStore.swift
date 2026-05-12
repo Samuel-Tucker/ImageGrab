@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import ImageIO
+import UniformTypeIdentifiers
 
 // Thread-safe thumbnail cache
 private final class ThumbnailCache: @unchecked Sendable {
@@ -36,8 +37,7 @@ public final class CaptureStore {
 
     public init(capturesDirectory: URL? = nil, fileManager: FileManager = .default) {
         self.fileManager = fileManager
-        let base = capturesDirectory ?? URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent("repos/ImageGrab/captures")
+        let base = capturesDirectory ?? Self.defaultCapturesDirectory(fileManager: fileManager)
         capturesDir = base
         metadataURL = base.appendingPathComponent(".metadata.json")
         try? fileManager.createDirectory(at: base, withIntermediateDirectories: true)
@@ -59,40 +59,11 @@ public final class CaptureStore {
     @discardableResult
     public func addCapture(image: NSImage) -> CaptureEntry? {
         let timestamp = Self.timestampFormatter.string(from: Date())
-        let filename = "capture-\(timestamp).webp"
-        let url = capturesDir.appendingPathComponent(filename)
+        let url = uniqueCaptureURL(baseName: "capture-\(timestamp)", extension: "png")
+        let filename = url.lastPathComponent
 
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
-
-        // Try WebP via CGImageDestination (available macOS 14+), fall back to PNG
-        let webpTypeID = "org.webmproject.webp" as CFString
-        let webpData = NSMutableData()
-        var wrote = false
-        if let dest = CGImageDestinationCreateWithData(webpData, webpTypeID, 1, nil) {
-            CGImageDestinationAddImage(dest, cgImage, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
-            wrote = CGImageDestinationFinalize(dest)
-        }
-
-        if wrote {
-            do {
-                try (webpData as Data).write(to: url)
-            } catch { return nil }
-        } else {
-            // Fallback to PNG if WebP encoding unavailable
-            let pngFilename = "capture-\(timestamp).png"
-            let pngURL = capturesDir.appendingPathComponent(pngFilename)
-            guard let tiffData = image.tiffRepresentation,
-                  let bitmap = NSBitmapImageRep(data: tiffData),
-                  let pngData = bitmap.representation(using: .png, properties: [:]) else { return nil }
-            do {
-                try pngData.write(to: pngURL)
-            } catch { return nil }
-            let entry = CaptureEntry(id: UUID(), filename: pngFilename, originalFilename: pngFilename, capturedAt: Date())
-            entries.insert(entry, at: 0)
-            if entries.count > 50 { entries = Array(entries.prefix(50)) }
-            save()
-            return entry
-        }
+        guard writePNG(cgImage, to: url) else { return nil }
 
         let entry = CaptureEntry(
             id: UUID(),
@@ -107,26 +78,11 @@ public final class CaptureStore {
         return entry
     }
 
-    public func rename(id: UUID, to newName: String) {
-        guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
-        let oldFilename = entries[index].filename
-        let ext = (oldFilename as NSString).pathExtension
-        let newFilename = "\(newName).\(ext)"
-
-        let oldURL = capturesDir.appendingPathComponent(oldFilename)
-        let newURL = capturesDir.appendingPathComponent(newFilename)
-
-        do {
-            try fileManager.moveItem(at: oldURL, to: newURL)
-            entries[index].filename = newFilename
-            save()
-        } catch {}
-    }
-
     public func delete(id: UUID) {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
         let url = capturesDir.appendingPathComponent(entries[index].filename)
         try? fileManager.removeItem(at: url)
+        try? fileManager.removeItem(at: dragExportURL(for: entries[index]))
         entries.remove(at: index)
         save()
     }
@@ -137,6 +93,33 @@ public final class CaptureStore {
 
     public func thumbnailURL(for entry: CaptureEntry) -> URL {
         capturesDir.appendingPathComponent(entry.filename)
+    }
+
+    public var capturesDirectory: URL {
+        capturesDir
+    }
+
+    public func dragURL(for entry: CaptureEntry) -> URL {
+        let sourceURL = capturesDir.appendingPathComponent(entry.filename)
+        let ext = sourceURL.pathExtension.lowercased()
+        if ["png", "jpg", "jpeg", "heic", "heif"].contains(ext) {
+            return sourceURL
+        }
+
+        let exportDirectory = dragExportDirectory()
+        try? fileManager.createDirectory(at: exportDirectory, withIntermediateDirectories: true)
+        let exportURL = dragExportURL(for: entry)
+
+        if fileManager.fileExists(atPath: exportURL.path) {
+            return exportURL
+        }
+
+        guard let imageSource = CGImageSourceCreateWithURL(sourceURL as CFURL, nil),
+              let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil),
+              writePNG(cgImage, to: exportURL) else {
+            return sourceURL
+        }
+        return exportURL
     }
 
     public nonisolated func thumbnailAsync(for url: URL, id: UUID, maxPixelSize: CGFloat = 120) async -> NSImage? {
@@ -172,8 +155,41 @@ public final class CaptureStore {
             let url = capturesDir.appendingPathComponent(entry.filename)
             try? fileManager.removeItem(at: url)
         }
+        try? fileManager.removeItem(at: dragExportDirectory())
         entries.removeAll()
         save()
+    }
+
+    private func uniqueCaptureURL(baseName: String, extension ext: String) -> URL {
+        var candidate = capturesDir
+            .appendingPathComponent(baseName)
+            .appendingPathExtension(ext)
+        var suffix = 2
+        while fileManager.fileExists(atPath: candidate.path) {
+            candidate = capturesDir
+                .appendingPathComponent("\(baseName)-\(suffix)")
+                .appendingPathExtension(ext)
+            suffix += 1
+        }
+        return candidate
+    }
+
+    private func dragExportDirectory() -> URL {
+        capturesDir.appendingPathComponent(".drag-exports", isDirectory: true)
+    }
+
+    private func dragExportURL(for entry: CaptureEntry) -> URL {
+        dragExportDirectory()
+            .appendingPathComponent((entry.filename as NSString).deletingPathExtension)
+            .appendingPathExtension("png")
+    }
+
+    private func writePNG(_ cgImage: CGImage, to url: URL) -> Bool {
+        guard let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) else {
+            return false
+        }
+        CGImageDestinationAddImage(destination, cgImage, nil)
+        return CGImageDestinationFinalize(destination)
     }
 
     private static let timestampFormatter: DateFormatter = {
@@ -181,4 +197,18 @@ public final class CaptureStore {
         f.dateFormat = "yyyyMMdd-HHmmss"
         return f
     }()
+
+    private static func defaultCapturesDirectory(fileManager: FileManager) -> URL {
+        let legacyURL = URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("repos/ImageGrab/captures")
+        if fileManager.fileExists(atPath: legacyURL.path) {
+            return legacyURL
+        }
+
+        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
+        return appSupport
+            .appendingPathComponent("ImageGrab", isDirectory: true)
+            .appendingPathComponent("Captures", isDirectory: true)
+    }
 }

@@ -1,48 +1,44 @@
 # ImageGrab Design Spec
 
+Historical note: this was the initial product sketch. The current app uses `Opt+G`
+for region capture and `Opt+Cmd+G` for full-screen capture, and no longer includes
+rename or auto-rename behavior.
+
 ## Purpose
-macOS menu bar app to capture images from websites, save to a folder, show thumbnails with quick copy-path and AI auto-rename.
+macOS menu bar app to capture images, save to a folder, show thumbnails, preview captures, copy file paths, and drag captures into chat apps, email, browsers, terminals, and other apps.
 
 ## Menu Bar
 - Icon: `camera.viewfinder` SF Symbol, template mode
 - Badge dot when new uncategorized images exist
 
 ## Global Hotkey
-- Ctrl+Opt+G to capture
+- Opt+G to capture region
+- Opt+Cmd+G to capture full screen
 
 ## Capture Flow
-1. User presses Ctrl+Opt+G
-2. App reads image from clipboard (user copies image from browser first with right-click > Copy Image, then presses hotkey)
-3. Image saved to `~/repos/ImageGrab/captures/` with timestamp filename
-4. AI auto-rename fires async via `kimi-cli --quiet --no-thinking -p "Describe this image in 2-4 words for a filename. Only output the filename, no extension. Use kebab-case."` with the image path
-5. File renamed silently; fallback to timestamp name if kimi times out (5s)
+1. User presses Opt+G or Opt+Cmd+G
+2. App triggers the native macOS screenshot shortcut to capture to clipboard
+3. User reviews and optionally annotates the capture in the preview window
+4. Image is saved to `~/repos/ImageGrab/captures/` with a timestamp filename
+5. User can copy the file path or drag the saved file into another app
 
 ## Dropdown (NSPopover)
 - Header: "ImageGrab" + capture count
 - Grid: 2 columns of 60x60px thumbnails, 6px corner radius, max 12 recent
 - Each thumbnail shows:
   - Image preview (aspect-fill, clipped)
-  - AI-generated name below (11pt, secondary color)
-  - `sparkles` icon if AI-named
-- Click thumbnail → copy full path to clipboard, brief green flash
-- Right-click → context menu: Reveal in Finder, Edit Name, Delete, Copy Image
-- Click name text → inline editable field for rename
+  - Timestamp filename below (11pt, secondary color)
+  - Always-visible Preview and Copy Path buttons
+- Right-click → context menu: Preview, Copy Path, Reveal in Finder, Delete
 - Footer: "Open Captures Folder" + "Clear All"
 
-## AI Rename Engine
-- Tool: `kimi-cli --quiet --no-thinking -p "<prompt>"`
-- Timeout: 5 seconds
-- Fallback: keep timestamp name (e.g., `capture-20260311-121530.png`)
-- Note: kimi-cli cannot process images directly. Rename will use clipboard text context if available, otherwise timestamp only. Future: integrate vision model when ollama is installed.
-
 ## Storage
-- Captures dir: `~/repos/ImageGrab/captures/`
-- Metadata: `~/repos/ImageGrab/captures/.metadata.json` (maps filename → original name, AI name, timestamp)
+- Captures dir: fresh installs use `~/Library/Application Support/ImageGrab/Captures/`; legacy local dev installs can continue using `~/repos/ImageGrab/captures/`
+- Metadata: `~/repos/ImageGrab/captures/.metadata.json`
 
 ## Tech
 - Swift 6, macOS 13+, SPM
 - `NSStatusItem` + `NSPopover` + SwiftUI for popover content
 - `Carbon` hotkey API
 - `NSPasteboard` to read images from clipboard
-- `Process` to shell out to kimi-cli
 - `LSUIElement = true`

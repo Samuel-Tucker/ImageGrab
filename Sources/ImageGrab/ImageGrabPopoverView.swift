@@ -4,13 +4,8 @@ import UniformTypeIdentifiers
 struct ImageGrabPopoverView: View {
     @ObservedObject var viewModel: PopoverViewModel
     let onClose: () -> Void
-    @State private var editingID: UUID?
-    @State private var editText = ""
-    @State private var originalEditText = ""
     @State private var copiedID: UUID?
-    @State private var hoveredID: UUID?
     @State private var showClearAllConfirm = false
-    @FocusState private var isRenameFieldFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -18,9 +13,12 @@ struct ImageGrabPopoverView: View {
             HStack {
                 Text("ImageGrab")
                     .font(.headline)
-                Text("Ctrl+Opt+G")
+                Text("Opt+G")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Text("Opt+Cmd+G")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
                 Spacer()
                 Text("\(viewModel.entries.count) captures")
                     .font(.caption)
@@ -47,7 +45,7 @@ struct ImageGrabPopoverView: View {
                         .foregroundStyle(.secondary)
                     Text("No captures yet")
                         .foregroundStyle(.secondary)
-                    Text("Copy an image, then press ctl+opt+G")
+                    Text("Press Opt+G for region or Opt+Cmd+G for full screen")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
@@ -129,37 +127,10 @@ struct ImageGrabPopoverView: View {
             entry: entry,
             viewModel: viewModel,
             isCopied: copiedID == entry.id,
-            isHovered: hoveredID == entry.id,
-            isEditing: editingID == entry.id,
-            editText: $editText,
-            isRenameFieldFocused: $isRenameFieldFocused,
             onCopy: { copyPath(for: entry) },
             onQuickView: { viewModel.showQuickView(for: entry) },
-            onHover: { hovering in
-                withAnimation(.easeInOut(duration: 0.15)) {
-                    hoveredID = hovering ? entry.id : nil
-                }
-            },
-            onStartEditing: { startEditing(entry) },
-            onCommitRename: { commitRename(for: entry) },
-            onCancelRename: { editingID = nil },
             onDelete: { viewModel.delete(id: entry.id) }
         )
-    }
-
-    private func startEditing(_ entry: CaptureEntry) {
-        let name = (entry.filename as NSString).deletingPathExtension
-        editText = name
-        originalEditText = name
-        editingID = entry.id
-    }
-
-    private func commitRename(for entry: CaptureEntry) {
-        let trimmed = editText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty && trimmed != originalEditText {
-            viewModel.rename(id: entry.id, to: trimmed)
-        }
-        editingID = nil
     }
 
     private func copyPath(for entry: CaptureEntry) {
@@ -177,16 +148,8 @@ private struct CaptureCell: View {
     let entry: CaptureEntry
     let viewModel: PopoverViewModel
     let isCopied: Bool
-    let isHovered: Bool
-    let isEditing: Bool
-    @Binding var editText: String
-    var isRenameFieldFocused: FocusState<Bool>.Binding
     let onCopy: () -> Void
     let onQuickView: () -> Void
-    let onHover: (Bool) -> Void
-    let onStartEditing: () -> Void
-    let onCommitRename: () -> Void
-    let onCancelRename: () -> Void
     let onDelete: () -> Void
 
     @State private var thumbnail: NSImage?
@@ -212,149 +175,146 @@ private struct CaptureCell: View {
                     RoundedRectangle(cornerRadius: 6)
                         .stroke(isCopied ? Color.green : Color.clear, lineWidth: 2)
                 )
-                .overlay(alignment: .topTrailing) {
-                    if isHovered {
-                        Button {
-                            onQuickView()
-                        } label: {
-                            Image(systemName: "eye")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .frame(width: 22, height: 22)
-                                .background(Color.black.opacity(0.65), in: Circle())
-                        }
-                        .buttonStyle(.plain)
-                        .padding(4)
-                        .transition(.opacity)
-                    }
-                }
-
-                // Copy path button — always visible at bottom
-                Button {
-                    onCopy()
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: isCopied ? "checkmark" : "doc.on.doc")
-                            .font(.system(size: 9, weight: .semibold))
-                        Text(isCopied ? "Copied" : "Copy Path")
-                            .font(.system(size: 9, weight: .medium))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 4)
-                    .foregroundStyle(isCopied ? .green : .white)
-                    .background(Color.black.opacity(0.55))
-                }
-                .buttonStyle(.plain)
-                .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 6, bottomTrailingRadius: 6))
             }
-            .onHover { hovering in
-                onHover(hovering)
-            }
-            .contextMenu {
-                Button {
-                    onCopy()
-                } label: {
-                    Label("Copy Path", systemImage: "doc.on.doc")
-                }
-                Button {
-                    let path = viewModel.fullPath(for: entry)
-                    NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: "")
-                } label: {
-                    Label("Reveal in Finder", systemImage: "folder")
-                }
-                Button {
-                    onStartEditing()
-                } label: {
-                    Label("Rename", systemImage: "pencil")
-                }
-                Divider()
-                Button(role: .destructive) {
-                    onDelete()
-                } label: {
-                    Label("Delete", systemImage: "trash")
-                }
-            }
+            .contentShape(RoundedRectangle(cornerRadius: 6))
             .onDrag {
-                viewModel.onDragStarted?()
-
-                let url = URL(fileURLWithPath: viewModel.fullPath(for: entry))
-                let provider = NSItemProvider()
-                provider.suggestedName = entry.filename
-
-                let imageType = UTType(filenameExtension: url.pathExtension) ?? .png
-
-                // File URL for Electron/browser drop targets
-                provider.registerObject(url as NSURL, visibility: .all)
-
-                // Raw image data for apps that accept image data directly
-                if let imageData = try? Data(contentsOf: url) {
-                    provider.registerDataRepresentation(
-                        forTypeIdentifier: imageType.identifier,
-                        visibility: .all
-                    ) { completion in
-                        completion(imageData, nil)
-                        return nil
-                    }
-                }
-
-                // File representation for file-system-aware apps (Finder, etc.)
-                provider.registerFileRepresentation(
-                    forTypeIdentifier: imageType.identifier,
-                    fileOptions: [],
-                    visibility: .all
-                ) { completion in
-                    completion(url, false, nil)
-                    return nil
-                }
-
-                // Plain text path for terminal apps (Terminal.app, iTerm2)
-                let shellPath = url.path.replacingOccurrences(of: " ", with: "\\ ")
-                provider.registerDataRepresentation(
-                    forTypeIdentifier: UTType.utf8PlainText.identifier,
-                    visibility: .all
-                ) { completion in
-                    completion(shellPath.data(using: .utf8), nil)
-                    return nil
-                }
-
-                return provider
+                dragProvider()
             }
-            .task(id: entry.filename) {
-                thumbnail = await viewModel.thumbnailImage(for: entry)
+
+            HStack(spacing: 6) {
+                Button {
+                    onQuickView()
+                } label: {
+                    Label("Preview", systemImage: "eye")
+                        .font(.system(size: 10, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 24)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("Preview capture")
+
+                Button {
+                    onCopy()
+                } label: {
+                    Label(isCopied ? "Copied" : "Copy Path", systemImage: isCopied ? "checkmark" : "doc.on.doc")
+                        .font(.system(size: 10, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 24)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .tint(isCopied ? .green : .accentColor)
+                .help("Copy capture path")
             }
 
             // Name
-            if isEditing {
-                TextField("Name", text: $editText)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 9))
-                    .focused(isRenameFieldFocused)
-                    .onAppear {
-                        DispatchQueue.main.async {
-                            isRenameFieldFocused.wrappedValue = true
-                        }
-                    }
-                    .onSubmit {
-                        onCommitRename()
-                    }
-                    .onExitCommand {
-                        onCancelRename()
-                    }
-                    .onChange(of: isRenameFieldFocused.wrappedValue) { focused in
-                        if !focused && isEditing {
-                            onCommitRename()
-                        }
-                    }
-            } else {
-                Text((entry.filename as NSString).deletingPathExtension)
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .onTapGesture {
-                        onStartEditing()
-                    }
+            Text((entry.filename as NSString).deletingPathExtension)
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .contextMenu {
+            Button {
+                onQuickView()
+            } label: {
+                Label("Preview", systemImage: "eye")
+            }
+            Button {
+                onCopy()
+            } label: {
+                Label("Copy Path", systemImage: "doc.on.doc")
+            }
+            Button {
+                let path = viewModel.fullPath(for: entry)
+                NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: "")
+            } label: {
+                Label("Reveal in Finder", systemImage: "folder")
+            }
+            Divider()
+            Button(role: .destructive) {
+                onDelete()
+            } label: {
+                Label("Delete", systemImage: "trash")
             }
         }
+        .task(id: entry.filename) {
+            thumbnail = await viewModel.thumbnailImage(for: entry)
+        }
+    }
+
+    private func dragProvider() -> NSItemProvider {
+        viewModel.onDragStarted?()
+
+        let url = viewModel.dragURL(for: entry)
+        let provider = NSItemProvider()
+        provider.suggestedName = url.lastPathComponent
+
+        let imageType = UTType(filenameExtension: url.pathExtension) ?? .png
+
+        // File URL for Muxary raw/readable terminal panes and Electron/browser drop targets.
+        provider.registerObject(url as NSURL, visibility: .all)
+        provider.registerDataRepresentation(
+            forTypeIdentifier: UTType.fileURL.identifier,
+            visibility: .all
+        ) { completion in
+            completion(url.absoluteString.data(using: .utf8), nil)
+            return nil
+        }
+        provider.registerDataRepresentation(
+            forTypeIdentifier: UTType.url.identifier,
+            visibility: .all
+        ) { completion in
+            completion(url.absoluteString.data(using: .utf8), nil)
+            return nil
+        }
+
+        // Raw image data for apps that accept image data directly.
+        provider.registerDataRepresentation(
+            forTypeIdentifier: imageType.identifier,
+            visibility: .all
+        ) { completion in
+            do {
+                let imageData = try Data(contentsOf: url)
+                completion(imageData, nil)
+            } catch {
+                completion(nil, error)
+            }
+            return nil
+        }
+        provider.registerDataRepresentation(
+            forTypeIdentifier: UTType.image.identifier,
+            visibility: .all
+        ) { completion in
+            do {
+                let imageData = try Data(contentsOf: url)
+                completion(imageData, nil)
+            } catch {
+                completion(nil, error)
+            }
+            return nil
+        }
+
+        // File representation for file-system-aware apps (Finder, etc.).
+        provider.registerFileRepresentation(
+            forTypeIdentifier: imageType.identifier,
+            fileOptions: [],
+            visibility: .all
+        ) { completion in
+            completion(url, false, nil)
+            return nil
+        }
+
+        // Plain text path for readable terminal/chat inputs.
+        provider.registerDataRepresentation(
+            forTypeIdentifier: UTType.utf8PlainText.identifier,
+            visibility: .all
+        ) { completion in
+            completion(url.path.data(using: .utf8), nil)
+            return nil
+        }
+
+        return provider
     }
 }

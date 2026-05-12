@@ -11,7 +11,7 @@ public final class PopoverViewModel: ObservableObject {
 
     /// Called to keep/release the popover while quick view is open
     public var onQuickViewOpened: (() -> Void)?
-    public var onQuickViewClosed: (() -> Void)?
+    public var onQuickViewClosed: ((QuickViewCloseReason) -> Void)?
 
     private let store: CaptureStore
     private var currentQuickViewPanel: QuickViewPanel?
@@ -42,15 +42,6 @@ public final class PopoverViewModel: ObservableObject {
         refresh()
     }
 
-    public func rename(id: UUID, to name: String) {
-        if currentQuickViewEntryID == id {
-            dismissQuickView()
-        }
-        store.invalidateThumbnail(for: id)
-        store.rename(id: id, to: name)
-        refresh()
-    }
-
     public func clearAll() {
         dismissQuickView()
         store.clearAll()
@@ -58,9 +49,7 @@ public final class PopoverViewModel: ObservableObject {
     }
 
     public func openFolder() {
-        let url = URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent("repos/ImageGrab/captures")
-        NSWorkspace.shared.open(url)
+        NSWorkspace.shared.open(store.capturesDirectory)
     }
 
     public func thumbnailImage(for entry: CaptureEntry) async -> NSImage? {
@@ -70,6 +59,10 @@ public final class PopoverViewModel: ObservableObject {
 
     public func fullPath(for entry: CaptureEntry) -> String {
         store.path(for: entry)
+    }
+
+    public func dragURL(for entry: CaptureEntry) -> URL {
+        store.dragURL(for: entry)
     }
 
     public func showQuickView(for entry: CaptureEntry) {
@@ -94,10 +87,10 @@ public final class PopoverViewModel: ObservableObject {
         }
 
         let panel = QuickViewPanel(image: image, filename: entry.filename, screen: screen)
-        panel.onClose = { [weak self, weak panel] in
+        panel.onClose = { [weak self, weak panel] reason in
             guard let self else { return }
             if self.currentQuickViewPanel === panel {
-                self.clearQuickViewReferences()
+                self.clearQuickViewReferences(reason: reason)
             }
         }
 
@@ -108,14 +101,14 @@ public final class PopoverViewModel: ObservableObject {
 
     public func dismissQuickView() {
         let panel = currentQuickViewPanel
-        clearQuickViewReferences()
-        panel?.close()
+        clearQuickViewReferences(reason: .programmatic)
+        panel?.closeProgrammatically()
     }
 
     private func syncQuickViewIfNeeded() {
         guard let viewedEntryID = currentQuickViewEntryID else { return }
         guard let panel = currentQuickViewPanel else {
-            clearQuickViewReferences()
+            clearQuickViewReferences(reason: .window)
             return
         }
         guard let entry = entries.first(where: { $0.id == viewedEntryID }),
@@ -141,10 +134,10 @@ public final class PopoverViewModel: ObservableObject {
         )
     }
 
-    private func clearQuickViewReferences() {
+    private func clearQuickViewReferences(reason: QuickViewCloseReason) {
         currentQuickViewPanel = nil
         currentQuickViewEntryID = nil
-        onQuickViewClosed?()
+        onQuickViewClosed?(reason)
     }
 
     private func activeScreen() -> NSScreen? {

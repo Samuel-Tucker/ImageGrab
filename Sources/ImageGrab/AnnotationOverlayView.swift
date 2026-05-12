@@ -418,6 +418,7 @@ final class AnnotationOverlayView: NSView {
                 showCursor: cursorVisible
             )
         }
+
     }
 
     private func drawAnnotation(_ annotation: Annotation) {

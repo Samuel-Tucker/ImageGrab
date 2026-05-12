@@ -14,24 +14,23 @@ A lightweight macOS menu bar app for fast native screenshots, quick markup, and 
 
 ## Features
 
-- **Global hotkey** — Press `Ctrl+Opt+G` from anywhere to trigger the native macOS screenshot crosshair
+- **Global hotkeys** — Press `Opt+G` for a region capture or `Opt+Cmd+G` for a full-screen capture
 - **Preview before saving** — Review every capture before it is written to disk
 - **Annotation tools** — Pen, box, arrow, and text with color presets plus a text background picker
 - **Movable annotations** — Click existing text, boxes, arrows, or pen strokes to reposition them
 - **Editable text markup** — Click text annotations to reopen editing, then adjust font size with `Cmd+=`, `Cmd+-`, or the scroll wheel
 - **Quick view panel** — Hover a thumbnail and click the eye icon for a floating larger preview
 - **Thumbnail grid** — Browse up to 50 recent captures from the menu bar popover
-- **Drag and drop** — Drag captures into Slack, browsers, Finder, terminals, and Electron apps
-- **Inline rename** — Click a filename or use the context menu to rename captures in place
-- **Context menu** — Copy path, reveal in Finder, rename, or delete any capture
-- **Efficient output** — Saves WebP when available on the host macOS version and falls back to PNG otherwise
+- **Drag and drop** — Drag captures into chat apps, Gmail, Slack, Discord, browsers, Finder, terminals, and Electron apps
+- **Context menu** — Preview, copy path, reveal in Finder, or delete any capture
+- **Compatible output** — Saves PNG files for reliable drag-and-drop uploads into chat, email, and browser apps
 
 ## Requirements
 
 - macOS 13+
-- Accessibility permission for the global hotkey and native screenshot trigger
+- macOS screenshot permissions if prompted by the system
 
-ImageGrab uses the built-in macOS screenshot tool, so it does not require a separate Screen Recording permission prompt in the app itself.
+ImageGrab uses the built-in macOS screenshot tool for region and full-screen capture.
 
 ## Install
 
@@ -66,23 +65,39 @@ cd ImageGrab
 ./Scripts/build_app.sh
 ```
 
-The build script creates `~/Applications/ImageGrab.app`, registers it with Launch Services, and attempts to codesign it with the local `ImageGrab Dev` identity if that certificate exists.
+The build script creates `~/Applications/ImageGrab.app`, registers it with Launch Services, and attempts to codesign it with the local `ImageGrab Dev` identity if that certificate exists. If that identity is unavailable, it applies an ad-hoc app signature so macOS sees a coherent bundle identity.
+
+For a non-destructive review build, point `APP_DIR` somewhere temporary:
+
+```sh
+APP_DIR=/tmp/ImageGrab.app ./Scripts/build_app.sh
+open /tmp/ImageGrab.app
+```
+
+To build unsigned/no-Developer-ID release assets for local testing:
+
+```sh
+DIST_DIR=/tmp/imagegrab-release SIGN_IDENTITY=none ./Scripts/build_release_assets.sh 0.1.0
+```
+
+That produces an ad-hoc signed `.zip`, `.dmg`, and `SHA256SUMS`. Gatekeeper can still warn or reject unsigned, unnotarized downloads from the internet; Developer ID signing and notarization are required for the smoothest public install.
 
 ## Usage
 
-1. Press `Ctrl+Opt+G` or click the menu bar icon.
-2. Select a screen region with the native macOS crosshair.
+1. Press `Opt+G` for a region capture or `Opt+Cmd+G` for a full-screen capture.
+2. For region captures, select a screen region with the native macOS crosshair.
 3. Annotate in the preview window if needed.
 4. Click `Save` or `Save & Copy Path`.
-5. Use the menu bar popover to copy paths, rename files, quick-view images, or drag captures into other apps.
+5. Use the menu bar popover to preview, copy paths, or drag captures into other apps.
 
-Captures are stored in `~/repos/ImageGrab/captures/`.
+Captures are stored in `~/Library/Application Support/ImageGrab/Captures/` for fresh installs. Existing local development installs that already have `~/repos/ImageGrab/captures/` keep using that legacy folder.
 
 ## Keyboard Shortcuts
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl+Opt+G` | Start capture |
+| `Opt+G` | Start region capture |
+| `Opt+Cmd+G` | Start full-screen capture |
 | `Cmd+Z` | Undo the last committed annotation |
 | `Esc` | Cancel capture, clear selection, or finish text editing |
 | `Return` | Save & Copy Path from the preview window |

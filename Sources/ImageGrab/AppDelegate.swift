@@ -12,9 +12,24 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
     private var popover: NSPopover?
     private var popoverKeyDownMonitor: Any?
     private var previewWindow: CapturePreviewWindow?
+    private var reopenPopoverAfterQuickView = false
 
     public override init() {
         super.init()
+    }
+
+    private enum CaptureMode {
+        case region
+        case fullScreen
+
+        var screencaptureArguments: [String] {
+            switch self {
+            case .region:
+                ["-i", "-c"]
+            case .fullScreen:
+                ["-c"]
+            }
+        }
     }
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
@@ -59,17 +74,30 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         // Keep popover open during drag sessions so cross-app drops work
         vm.onDragStarted = { [weak self] in
             self?.popover?.behavior = .applicationDefined
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) {
                 self?.popover?.behavior = .transient
             }
         }
 
-        // Keep popover open while quick view panel is showing
+        // Quick View needs to sit above the thumbnail list. The macOS status-item
+        // popover layer wins z-order fights, so close it and restore it on Esc.
         vm.onQuickViewOpened = { [weak self] in
-            self?.popover?.behavior = .applicationDefined
+            guard let self else { return }
+            self.reopenPopoverAfterQuickView = self.popover?.isShown == true
+            if self.reopenPopoverAfterQuickView {
+                self.closePopover()
+            }
         }
-        vm.onQuickViewClosed = { [weak self] in
-            self?.popover?.behavior = .transient
+        vm.onQuickViewClosed = { [weak self] reason in
+            guard let self else { return }
+            guard self.reopenPopoverAfterQuickView, reason == .escape else {
+                self.reopenPopoverAfterQuickView = false
+                return
+            }
+            self.reopenPopoverAfterQuickView = false
+            if let button = self.statusItem?.button {
+                self.showPopover(relativeTo: button)
+            }
         }
     }
 
@@ -118,53 +146,86 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
     }
 
     private func registerHotKey() {
-        // Ctrl+Opt+G
+        // Opt+G: region capture. Opt+Cmd+G: full-screen capture.
         let manager = GlobalHotKeyManager()
         hotKeyManager = manager
-        let modifiers = UInt32(controlKey | optionKey)
         let keyCode = UInt32(kVK_ANSI_G)
-        let registered = manager.register(keyCode: keyCode, modifiers: modifiers) { [weak self] in
+
+        let regionRegistered = manager.register(keyCode: keyCode, modifiers: UInt32(optionKey)) { [weak self] in
             Task { @MainActor in
-                self?.startCapture()
+                self?.startCapture(.region)
             }
         }
-        NSLog("ImageGrab: hotkey registration \(registered ? "succeeded" : "FAILED")")
+
+        let fullScreenRegistered = manager.register(keyCode: keyCode, modifiers: UInt32(optionKey | cmdKey)) { [weak self] in
+            Task { @MainActor in
+                self?.startCapture(.fullScreen)
+            }
+        }
+
+        NSLog("ImageGrab: region hotkey registration \(regionRegistered ? "succeeded" : "FAILED")")
+        NSLog("ImageGrab: full-screen hotkey registration \(fullScreenRegistered ? "succeeded" : "FAILED")")
     }
 
     private var clipboardPollTimer: Timer?
+    private var isCaptureInProgress = false
+    private var captureLastSeenChangeCount = 0
 
-    private func startCapture() {
+    private func startCapture(_ mode: CaptureMode) {
+        guard !isCaptureInProgress else { return }
+        isCaptureInProgress = true
+
         // Close popover if open
         closePopover()
 
-        // Record current clipboard state, then simulate Cmd+Shift+Ctrl+4
-        // This triggers the native macOS screenshot-to-clipboard crosshair.
-        // Requires Accessibility permission (persists across rebuilds), NOT Screen Recording.
-        let initialChangeCount = NSPasteboard.general.changeCount
+        // Record current clipboard state, then ask macOS screencapture to write
+        // the selected/full-screen image to the clipboard.
+        captureLastSeenChangeCount = NSPasteboard.general.changeCount
 
-        let source = CGEventSource(stateID: .hidSystemState)
-        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x15, keyDown: true)  // 0x15 = kVK_ANSI_4
-        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0x15, keyDown: false)
-        let flags: CGEventFlags = [.maskCommand, .maskShift, .maskControl]
-        keyDown?.flags = flags
-        keyUp?.flags = flags
-        keyDown?.post(tap: .cghidEventTap)
-        keyUp?.post(tap: .cghidEventTap)
+        guard runScreenCapture(mode) else {
+            isCaptureInProgress = false
+            return
+        }
 
         // Poll clipboard for the new screenshot
         let startTime = Date()
         clipboardPollTimer?.invalidate()
         clipboardPollTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] timer in
-            let pasteboard = NSPasteboard.general
-            if pasteboard.changeCount != initialChangeCount {
-                timer.invalidate()
-                Task { @MainActor [weak self] in
-                    self?.handleClipboardCapture()
-                }
-            } else if Date().timeIntervalSince(startTime) > 30 {
-                // Timeout — user likely cancelled
-                timer.invalidate()
+            _ = timer
+            DispatchQueue.main.async { [weak self] in
+                self?.pollClipboardForCapture(startTime: startTime)
             }
+        }
+    }
+
+    private func pollClipboardForCapture(startTime: Date) {
+        let pasteboard = NSPasteboard.general
+        if pasteboard.changeCount != captureLastSeenChangeCount, NSImage(pasteboard: pasteboard) != nil {
+            clipboardPollTimer?.invalidate()
+            clipboardPollTimer = nil
+            isCaptureInProgress = false
+            handleClipboardCapture()
+        } else if pasteboard.changeCount != captureLastSeenChangeCount {
+            captureLastSeenChangeCount = pasteboard.changeCount
+        } else if Date().timeIntervalSince(startTime) > 120 {
+            // Timeout — user likely cancelled
+            clipboardPollTimer?.invalidate()
+            clipboardPollTimer = nil
+            isCaptureInProgress = false
+        }
+    }
+
+    private func runScreenCapture(_ mode: CaptureMode) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        process.arguments = mode.screencaptureArguments
+        do {
+            try process.run()
+            return true
+        } catch {
+            NSSound.beep()
+            NSLog("ImageGrab: screencapture failed: \(error.localizedDescription)")
+            return false
         }
     }
 

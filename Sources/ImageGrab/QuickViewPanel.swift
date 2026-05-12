@@ -1,10 +1,19 @@
 import AppKit
 
+public enum QuickViewCloseReason {
+    case escape
+    case outsideClick
+    case window
+    case programmatic
+}
+
 final class QuickViewPanel: NSPanel, NSWindowDelegate {
-    var onClose: (() -> Void)?
+    var onClose: ((QuickViewCloseReason) -> Void)?
 
     private let imageView = NSImageView()
     private var outsideClickMonitor: Any?
+    private var escapeKeyMonitor: Any?
+    private var pendingCloseReason: QuickViewCloseReason = .window
 
     init(image: NSImage, filename: String, screen: NSScreen?) {
         let contentRect = QuickViewPanel.contentRect(for: image.size, on: screen)
@@ -43,6 +52,7 @@ final class QuickViewPanel: NSPanel, NSWindowDelegate {
 
         update(image: image, filename: filename, screen: screen, centerOnScreen: true)
         startOutsideClickMonitor()
+        startEscapeKeyMonitor()
     }
 
     override var canBecomeKey: Bool { true }
@@ -51,6 +61,7 @@ final class QuickViewPanel: NSPanel, NSWindowDelegate {
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 {
+            pendingCloseReason = .escape
             close()
             return
         }
@@ -60,6 +71,7 @@ final class QuickViewPanel: NSPanel, NSWindowDelegate {
 
     func show() {
         makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     func update(image: NSImage, filename: String, screen: NSScreen?, centerOnScreen: Bool) {
@@ -78,8 +90,16 @@ final class QuickViewPanel: NSPanel, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        let reason = pendingCloseReason
+        pendingCloseReason = .window
         stopOutsideClickMonitor()
-        onClose?()
+        stopEscapeKeyMonitor()
+        onClose?(reason)
+    }
+
+    func closeProgrammatically() {
+        pendingCloseReason = .programmatic
+        close()
     }
 
     private func startOutsideClickMonitor() {
@@ -91,6 +111,7 @@ final class QuickViewPanel: NSPanel, NSWindowDelegate {
             guard let self, self.isVisible else { return }
             let mouseLocation = NSEvent.mouseLocation
             if !self.frame.contains(mouseLocation) {
+                self.pendingCloseReason = .outsideClick
                 self.close()
             }
         }
@@ -100,6 +121,25 @@ final class QuickViewPanel: NSPanel, NSWindowDelegate {
         if let outsideClickMonitor {
             NSEvent.removeMonitor(outsideClickMonitor)
             self.outsideClickMonitor = nil
+        }
+    }
+
+    private func startEscapeKeyMonitor() {
+        stopEscapeKeyMonitor()
+        escapeKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, self.isVisible, event.keyCode == 53 else {
+                return event
+            }
+            self.pendingCloseReason = .escape
+            self.close()
+            return nil
+        }
+    }
+
+    private func stopEscapeKeyMonitor() {
+        if let escapeKeyMonitor {
+            NSEvent.removeMonitor(escapeKeyMonitor)
+            self.escapeKeyMonitor = nil
         }
     }
 
@@ -137,4 +177,5 @@ final class QuickViewPanel: NSPanel, NSWindowDelegate {
         let mouseLocation = NSEvent.mouseLocation
         return NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) })
     }
+
 }

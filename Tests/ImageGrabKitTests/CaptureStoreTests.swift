@@ -13,7 +13,7 @@ final class CaptureStoreTests: XCTestCase {
 
         XCTAssertEqual(store.entries.count, 1)
         XCTAssertTrue(FileManager.default.fileExists(atPath: store.path(for: entry)))
-        XCTAssertTrue(["png", "webp"].contains((entry.filename as NSString).pathExtension))
+        XCTAssertEqual((entry.filename as NSString).pathExtension, "png")
         XCTAssertTrue(FileManager.default.fileExists(atPath: capturesDirectory.appendingPathComponent(".metadata.json").path))
 
         let thumbnail = await store.thumbnailAsync(for: store.thumbnailURL(for: entry), id: entry.id)
@@ -46,23 +46,6 @@ final class CaptureStoreTests: XCTestCase {
         XCTAssertEqual(store.entries.map(\.filename), [existing.filename])
     }
 
-    func testRenameMovesUnderlyingFile() throws {
-        let capturesDirectory = try makeCapturesDirectory()
-        defer { try? FileManager.default.removeItem(at: capturesDirectory) }
-
-        let store = CaptureStore(capturesDirectory: capturesDirectory)
-        let entry = try XCTUnwrap(store.addCapture(image: makeImage()))
-        let originalPath = store.path(for: entry)
-        let ext = (entry.filename as NSString).pathExtension
-
-        store.rename(id: entry.id, to: "renamed-capture")
-
-        let renamedEntry = try XCTUnwrap(store.entries.first)
-        XCTAssertEqual(renamedEntry.filename, "renamed-capture.\(ext)")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: originalPath))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: store.path(for: renamedEntry)))
-    }
-
     func testDeleteRemovesEntryAndFile() throws {
         let capturesDirectory = try makeCapturesDirectory()
         defer { try? FileManager.default.removeItem(at: capturesDirectory) }
@@ -75,6 +58,80 @@ final class CaptureStoreTests: XCTestCase {
 
         XCTAssertTrue(store.entries.isEmpty)
         XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+    }
+
+    func testDragURLUsesPNGFile() throws {
+        let capturesDirectory = try makeCapturesDirectory()
+        defer { try? FileManager.default.removeItem(at: capturesDirectory) }
+
+        let store = CaptureStore(capturesDirectory: capturesDirectory)
+        let entry = try XCTUnwrap(store.addCapture(image: makeImage()))
+
+        let dragURL = store.dragURL(for: entry)
+
+        XCTAssertEqual(dragURL.pathExtension, "png")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dragURL.path))
+    }
+
+    func testDeleteRemovesLegacyDragExport() throws {
+        let capturesDirectory = try makeCapturesDirectory()
+        defer { try? FileManager.default.removeItem(at: capturesDirectory) }
+
+        let entry = CaptureEntry(
+            id: UUID(),
+            filename: "legacy-capture.webp",
+            originalFilename: "legacy-capture.webp",
+            capturedAt: Date()
+        )
+        try pngData().write(to: capturesDirectory.appendingPathComponent(entry.filename))
+        try JSONEncoder().encode([entry]).write(to: capturesDirectory.appendingPathComponent(".metadata.json"))
+
+        let store = CaptureStore(capturesDirectory: capturesDirectory)
+        let loadedEntry = try XCTUnwrap(store.entries.first)
+        let dragURL = store.dragURL(for: loadedEntry)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dragURL.path))
+
+        store.delete(id: loadedEntry.id)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dragURL.path))
+    }
+
+    func testClearAllRemovesLegacyDragExportDirectory() throws {
+        let capturesDirectory = try makeCapturesDirectory()
+        defer { try? FileManager.default.removeItem(at: capturesDirectory) }
+
+        let entry = CaptureEntry(
+            id: UUID(),
+            filename: "legacy-capture.webp",
+            originalFilename: "legacy-capture.webp",
+            capturedAt: Date()
+        )
+        try pngData().write(to: capturesDirectory.appendingPathComponent(entry.filename))
+        try JSONEncoder().encode([entry]).write(to: capturesDirectory.appendingPathComponent(".metadata.json"))
+
+        let store = CaptureStore(capturesDirectory: capturesDirectory)
+        let loadedEntry = try XCTUnwrap(store.entries.first)
+        let dragURL = store.dragURL(for: loadedEntry)
+        let exportDirectory = dragURL.deletingLastPathComponent()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: exportDirectory.path))
+
+        store.clearAll()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: exportDirectory.path))
+    }
+
+    func testAddCaptureAvoidsFilenameCollisionWithinSameSecond() throws {
+        let capturesDirectory = try makeCapturesDirectory()
+        defer { try? FileManager.default.removeItem(at: capturesDirectory) }
+
+        let store = CaptureStore(capturesDirectory: capturesDirectory)
+        let first = try XCTUnwrap(store.addCapture(image: makeImage()))
+        let second = try XCTUnwrap(store.addCapture(image: makeImage()))
+
+        XCTAssertNotEqual(first.filename, second.filename)
+        XCTAssertEqual(Set(store.entries.map(\.filename)).count, 2)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.path(for: first)))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.path(for: second)))
     }
 
     func testClearAllRemovesTrackedFiles() throws {

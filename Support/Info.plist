@@ -13,6 +13,6 @@
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>LSUIElement</key><true/>
-    <key>NSAccessibilityUsageDescription</key><string>ImageGrab needs Accessibility access to trigger the screenshot crosshair when you press the hotkey.</string>
+    <key>NSAccessibilityUsageDescription</key><string>ImageGrab may use Accessibility access for global capture workflows on older builds.</string>
 </dict>
 </plist>

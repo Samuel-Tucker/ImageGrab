@@ -32,16 +32,21 @@ if [[ -n "$BUILD_NUMBER" ]]; then
 fi
 
 if [[ "$SIGN_IDENTITY" == "none" ]]; then
-  echo "Skipping code signing"
+  echo "Applying ad-hoc app signature"
+  codesign --force --deep --sign - "$APP_DIR"
 elif [[ "$ENABLE_HARDENED_RUNTIME" == "1" ]]; then
-  codesign --force --deep --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP_DIR" \
-    && echo "Signed with $SIGN_IDENTITY (hardened runtime)" \
-    || echo "Warning: code signing skipped (identity unavailable)"
+  codesign --force --deep --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP_DIR"
+  echo "Signed with $SIGN_IDENTITY (hardened runtime)"
 else
   codesign --force --deep --sign "$SIGN_IDENTITY" "$APP_DIR" \
     && echo "Signed with $SIGN_IDENTITY" \
-    || echo "Warning: code signing skipped (identity unavailable)"
+    || {
+      echo "Warning: $SIGN_IDENTITY unavailable; applying ad-hoc app signature"
+      codesign --force --deep --sign - "$APP_DIR"
+    }
 fi
+
+codesign --verify --deep --strict "$APP_DIR"
 
 if [[ "$REGISTER_APP" == "1" ]]; then
   /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP_DIR" >/dev/null 2>&1 || true
