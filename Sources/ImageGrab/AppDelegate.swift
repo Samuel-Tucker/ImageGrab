@@ -170,6 +170,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
     private var clipboardPollTimer: Timer?
     private var isCaptureInProgress = false
     private var captureLastSeenChangeCount = 0
+    private var captureProcessID: Int32?
 
     private func startCapture(_ mode: CaptureMode) {
         guard !isCaptureInProgress else { return }
@@ -182,10 +183,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         // the selected/full-screen image to the clipboard.
         captureLastSeenChangeCount = NSPasteboard.general.changeCount
 
-        guard runScreenCapture(mode) else {
-            isCaptureInProgress = false
+        guard let process = runScreenCapture(mode) else {
+            resetCaptureState()
             return
         }
+        captureProcessID = process.processIdentifier
 
         // Poll clipboard for the new screenshot
         let startTime = Date()
@@ -201,32 +203,55 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
     private func pollClipboardForCapture(startTime: Date) {
         let pasteboard = NSPasteboard.general
         if pasteboard.changeCount != captureLastSeenChangeCount, NSImage(pasteboard: pasteboard) != nil {
-            clipboardPollTimer?.invalidate()
-            clipboardPollTimer = nil
-            isCaptureInProgress = false
+            resetCaptureState()
             handleClipboardCapture()
         } else if pasteboard.changeCount != captureLastSeenChangeCount {
             captureLastSeenChangeCount = pasteboard.changeCount
         } else if Date().timeIntervalSince(startTime) > 120 {
             // Timeout — user likely cancelled
-            clipboardPollTimer?.invalidate()
-            clipboardPollTimer = nil
-            isCaptureInProgress = false
+            resetCaptureState()
         }
     }
 
-    private func runScreenCapture(_ mode: CaptureMode) -> Bool {
+    private func runScreenCapture(_ mode: CaptureMode) -> Process? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
         process.arguments = mode.screencaptureArguments
+        process.terminationHandler = { [weak self] finishedProcess in
+            let processID = finishedProcess.processIdentifier
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                self?.handleScreenCaptureProcessFinished(processID: processID)
+            }
+        }
         do {
             try process.run()
-            return true
+            return process
         } catch {
             NSSound.beep()
             NSLog("ImageGrab: screencapture failed: \(error.localizedDescription)")
-            return false
+            return nil
         }
+    }
+
+    private func handleScreenCaptureProcessFinished(processID: Int32) {
+        guard captureProcessID == processID else { return }
+
+        let pasteboard = NSPasteboard.general
+        if pasteboard.changeCount != captureLastSeenChangeCount, NSImage(pasteboard: pasteboard) != nil {
+            resetCaptureState()
+            handleClipboardCapture()
+            return
+        }
+
+        // Interactive region capture exits without changing the clipboard when the user presses Esc.
+        resetCaptureState()
+    }
+
+    private func resetCaptureState() {
+        clipboardPollTimer?.invalidate()
+        clipboardPollTimer = nil
+        isCaptureInProgress = false
+        captureProcessID = nil
     }
 
     private func handleClipboardCapture() {
