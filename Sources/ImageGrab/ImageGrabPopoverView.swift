@@ -153,11 +153,12 @@ private struct CaptureCell: View {
     let onDelete: () -> Void
 
     @State private var thumbnail: NSImage?
+    @State private var showDeleteConfirm = false
 
     var body: some View {
         VStack(spacing: 4) {
             // Thumbnail with copy bar and quick view button
-            ZStack(alignment: .bottom) {
+            ZStack(alignment: .topTrailing) {
                 Group {
                     if let thumbnail {
                         Image(nsImage: thumbnail)
@@ -175,10 +176,34 @@ private struct CaptureCell: View {
                     RoundedRectangle(cornerRadius: 6)
                         .stroke(isCopied ? Color.green : Color.clear, lineWidth: 2)
                 )
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 6))
-            .onDrag {
-                dragProvider()
+                .contentShape(RoundedRectangle(cornerRadius: 6))
+                .onDrag {
+                    dragProvider()
+                }
+
+                Button {
+                    showDeleteConfirm = true
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, Color.black.opacity(0.65))
+                }
+                .buttonStyle(.plain)
+                .padding(4)
+                .help("Delete capture")
+                .confirmationDialog(
+                    "Delete this capture?",
+                    isPresented: $showDeleteConfirm,
+                    titleVisibility: .visible
+                ) {
+                    Button("Delete", role: .destructive) {
+                        onDelete()
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("This action cannot be undone.")
+                }
             }
 
             HStack(spacing: 6) {

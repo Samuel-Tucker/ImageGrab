@@ -16,9 +16,9 @@ final class QuickViewPanel: NSPanel, NSWindowDelegate {
     private var pendingCloseReason: QuickViewCloseReason = .window
 
     init(image: NSImage, filename: String, screen: NSScreen?) {
-        let contentRect = QuickViewPanel.contentRect(for: image.size, on: screen)
+        let contentSize = QuickViewPanel.panelContentSize(on: screen)
         super.init(
-            contentRect: contentRect,
+            contentRect: NSRect(origin: .zero, size: contentSize),
             styleMask: [.nonactivatingPanel, .titled, .closable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -33,22 +33,22 @@ final class QuickViewPanel: NSPanel, NSWindowDelegate {
         collectionBehavior = [.fullScreenAuxiliary, .moveToActiveSpace]
         delegate = self
 
-        imageView.imageScaling = .scaleProportionallyUpOrDown
+        imageView.imageScaling = .scaleProportionallyDown
         imageView.imageAlignment = .alignCenter
-        imageView.translatesAutoresizingMaskIntoConstraints = false
 
-        let contentView = NSView(frame: NSRect(origin: .zero, size: contentRect.size))
+        let contentView = NSView(frame: NSRect(origin: .zero, size: contentSize))
         contentView.wantsLayer = true
         contentView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+
+        imageView.frame = NSRect(
+            x: 16,
+            y: 16,
+            width: max(contentSize.width - 32, 0),
+            height: max(contentSize.height - 32, 0)
+        )
+        imageView.autoresizingMask = [.width, .height]
         contentView.addSubview(imageView)
         self.contentView = contentView
-
-        NSLayoutConstraint.activate([
-            imageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
-            imageView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
-            imageView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 16),
-            imageView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -16)
-        ])
 
         update(image: image, filename: filename, screen: screen, centerOnScreen: true)
         startOutsideClickMonitor()
@@ -78,14 +78,10 @@ final class QuickViewPanel: NSPanel, NSWindowDelegate {
         title = filename
         imageView.image = image
 
-        let newContentRect = QuickViewPanel.contentRect(for: image.size, on: screen)
-        setContentSize(newContentRect.size)
         if centerOnScreen {
-            let centeredFrame = QuickViewPanel.centeredFrame(for: newContentRect.size, on: screen, panel: self)
+            let contentSize = QuickViewPanel.panelContentSize(on: screen)
+            let centeredFrame = QuickViewPanel.centeredFrame(for: contentSize, on: screen, panel: self)
             setFrame(centeredFrame, display: true, animate: true)
-        } else {
-            let resizedFrame = NSRect(origin: frame.origin, size: frameRect(forContentRect: newContentRect).size)
-            setFrame(resizedFrame, display: true, animate: true)
         }
     }
 
@@ -143,23 +139,10 @@ final class QuickViewPanel: NSPanel, NSWindowDelegate {
         }
     }
 
-    private static func contentRect(for imageSize: NSSize, on screen: NSScreen?) -> NSRect {
-        let fallbackSize = NSSize(width: 640, height: 400)
-        let resolvedImageSize = imageSize.width > 0 && imageSize.height > 0 ? imageSize : fallbackSize
-
+    private static func panelContentSize(on screen: NSScreen?) -> NSSize {
         let targetScreen = screen ?? screenContainingMouse() ?? NSScreen.main ?? NSScreen.screens.first
         let visibleFrame = targetScreen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
-        let maxWidth = visibleFrame.width * 0.8
-        let maxHeight = visibleFrame.height * 0.8
-
-        let widthScale = maxWidth / resolvedImageSize.width
-        let heightScale = maxHeight / resolvedImageSize.height
-        let scale = min(widthScale, heightScale, 1.0)
-
-        let panelWidth = resolvedImageSize.width * scale
-        let panelHeight = resolvedImageSize.height * scale
-
-        return NSRect(origin: .zero, size: NSSize(width: panelWidth, height: panelHeight))
+        return NSSize(width: visibleFrame.width * 0.60, height: visibleFrame.height * 0.60)
     }
 
     private static func centeredFrame(for contentSize: NSSize, on screen: NSScreen?, panel: NSPanel) -> NSRect {

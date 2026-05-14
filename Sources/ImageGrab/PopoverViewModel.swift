@@ -128,10 +128,12 @@ public final class PopoverViewModel: ObservableObject {
             return nil
         }
 
-        return NSImage(
-            cgImage: cgImage,
-            size: NSSize(width: CGFloat(cgImage.width), height: CGFloat(cgImage.height))
+        let scale = NSScreen.main?.backingScaleFactor ?? 2.0
+        let pointSize = NSSize(
+            width: CGFloat(cgImage.width) / scale,
+            height: CGFloat(cgImage.height) / scale
         )
+        return NSImage(cgImage: cgImage, size: pointSize)
     }
 
     private func clearQuickViewReferences(reason: QuickViewCloseReason) {
