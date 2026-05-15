@@ -13,12 +13,13 @@ struct ImageGrabPopoverView: View {
             HStack {
                 Text("ImageGrab")
                     .font(.headline)
-                Text("Opt+G")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text("Opt+Cmd+G")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                Button {} label: {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Opt+G: region capture\nOpt+Cmd+G: full screen capture")
                 Spacer()
                 Text("\(viewModel.entries.count) captures")
                     .font(.caption)
@@ -67,41 +68,40 @@ struct ImageGrabPopoverView: View {
 
             Divider()
 
-            // Footer — pill-style buttons with SF Symbols
+            // Footer actions stay low-emphasis so capture actions remain primary.
             HStack {
                 Button {
                     viewModel.openFolder()
                 } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "folder")
-                            .font(.system(size: 10))
-                        Text("Open Folder")
-                            .font(.system(size: 11, weight: .medium))
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Color.secondary.opacity(0.12))
-                    .clipShape(Capsule())
+                    Label("Open Folder", systemImage: "folder")
+                        .font(.system(size: 11, weight: .medium))
+                        .padding(.horizontal, 10)
+                        .frame(height: 24)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color.secondary.opacity(0.12))
+                        )
                 }
                 .buttonStyle(.plain)
+                .help("Open captures folder")
 
                 Spacer()
 
                 Button {
                     showClearAllConfirm = true
                 } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "trash")
-                            .font(.system(size: 10))
-                        Text("Clear All")
-                            .font(.system(size: 11, weight: .medium))
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Color.secondary.opacity(0.12))
-                    .clipShape(Capsule())
+                    Label("Clear All", systemImage: "trash")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.red)
+                        .padding(.horizontal, 10)
+                        .frame(height: 24)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color.red.opacity(0.14))
+                        )
                 }
                 .buttonStyle(.plain)
+                .help("Delete all captures")
                 .confirmationDialog(
                     "Delete all captures?",
                     isPresented: $showClearAllConfirm,
@@ -158,7 +158,10 @@ private struct CaptureCell: View {
 
     @State private var thumbnail: NSImage?
     @State private var showDeleteConfirm = false
+    @State private var isCellHovered = false
     @State private var isPreviewHovered = false
+    @State private var isEditHovered = false
+    @State private var isDeleteHovered = false
     @State private var isCopyHovered = false
     @State private var isEditingName = false
     @State private var isRenameHovered = false
@@ -166,8 +169,7 @@ private struct CaptureCell: View {
     @FocusState private var nameFieldFocused: Bool
 
     var body: some View {
-        VStack(spacing: 4) {
-            // Thumbnail with copy bar and quick view button
+        VStack(spacing: 5) {
             ZStack {
                 Group {
                     if let thumbnail {
@@ -193,41 +195,49 @@ private struct CaptureCell: View {
 
                 VStack {
                     HStack {
-                        Button {
-                            onEdit()
-                        } label: {
-                            Image(systemName: "pencil.circle.fill")
-                                .font(.system(size: 16, weight: .semibold))
-                                .symbolRenderingMode(.palette)
-                                .foregroundStyle(.white, Color.black.opacity(0.65))
-                        }
-                        .buttonStyle(.plain)
-                        .help("Edit annotations")
-
                         Spacer()
 
-                        Button {
-                            showDeleteConfirm = true
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 16, weight: .semibold))
-                                .symbolRenderingMode(.palette)
-                                .foregroundStyle(.white, Color.black.opacity(0.65))
-                        }
-                        .buttonStyle(.plain)
-                        .help("Delete capture")
-                        .confirmationDialog(
-                            "Delete this capture?",
-                            isPresented: $showDeleteConfirm,
-                            titleVisibility: .visible
-                        ) {
-                            Button("Delete", role: .destructive) {
-                                onDelete()
+                        HStack(spacing: 4) {
+                            thumbnailActionButton(
+                                systemName: "eye",
+                                help: "Preview capture",
+                                isHovered: isPreviewHovered,
+                                action: onQuickView
+                            )
+                            .onHover { isPreviewHovered = $0 }
+
+                            thumbnailActionButton(
+                                systemName: "scribble.variable",
+                                help: "Edit annotations",
+                                isHovered: isEditHovered,
+                                action: onEdit
+                            )
+                            .onHover { isEditHovered = $0 }
+
+                            thumbnailActionButton(
+                                systemName: "trash",
+                                help: "Delete capture",
+                                isHovered: isDeleteHovered,
+                                isDestructive: true,
+                                action: { showDeleteConfirm = true }
+                            )
+                            .onHover { isDeleteHovered = $0 }
+                            .confirmationDialog(
+                                "Delete this capture?",
+                                isPresented: $showDeleteConfirm,
+                                titleVisibility: .visible
+                            ) {
+                                Button("Delete", role: .destructive) {
+                                    onDelete()
+                                }
+                                Button("Cancel", role: .cancel) {}
+                            } message: {
+                                Text("This action cannot be undone.")
                             }
-                            Button("Cancel", role: .cancel) {}
-                        } message: {
-                            Text("This action cannot be undone.")
                         }
+                        .opacity(isCellHovered ? 1 : 0)
+                        .allowsHitTesting(isCellHovered)
+                        .animation(.easeOut(duration: 0.12), value: isCellHovered)
                     }
                     .padding(4)
 
@@ -235,43 +245,23 @@ private struct CaptureCell: View {
                 }
             }
 
-            HStack(spacing: 6) {
-                Button {
-                    onQuickView()
-                } label: {
-                    Label("Preview", systemImage: "eye")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(isPreviewHovered ? Color.primary : Color.secondary)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 24)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(isPreviewHovered ? Color.secondary.opacity(0.24) : Color.secondary.opacity(0.14))
-                        )
-                }
-                .buttonStyle(.plain)
-                .contentShape(RoundedRectangle(cornerRadius: 6))
-                .onHover { isPreviewHovered = $0 }
-                .help("Preview capture")
-
-                Button {
-                    onCopy()
-                } label: {
-                    Label(isCopied ? "Copied" : "Copy Path", systemImage: isCopied ? "checkmark" : "doc.on.doc")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 24)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(copyButtonBackground)
-                        )
-                }
-                .buttonStyle(.plain)
-                .contentShape(RoundedRectangle(cornerRadius: 6))
-                .onHover { isCopyHovered = $0 }
-                .help("Copy capture path")
+            Button {
+                onCopy()
+            } label: {
+                Label(isCopied ? "Copied" : "Copy Path", systemImage: isCopied ? "checkmark" : "doc.on.doc")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 24)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(copyButtonBackground)
+                    )
             }
+            .buttonStyle(.plain)
+            .contentShape(RoundedRectangle(cornerRadius: 6))
+            .onHover { isCopyHovered = $0 }
+            .help("Copy capture path")
 
             // Name row with inline rename
             HStack(spacing: 4) {
@@ -280,14 +270,7 @@ private struct CaptureCell: View {
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 9))
                         .focused($nameFieldFocused)
-                    Button {
-                        commitRename()
-                    } label: {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 9, weight: .semibold))
-                    }
-                    .buttonStyle(.plain)
-                    .help("Save name")
+                        .onExitCommand(perform: cancelRename)
                     Button {
                         cancelRename()
                     } label: {
@@ -337,7 +320,7 @@ private struct CaptureCell: View {
             Button {
                 onEdit()
             } label: {
-                Label("Edit Annotations", systemImage: "pencil")
+                Label("Edit Annotations", systemImage: "scribble.variable")
             }
             Button {
                 let path = viewModel.fullPath(for: entry)
@@ -360,6 +343,33 @@ private struct CaptureCell: View {
         .task(id: entry.filename) {
             thumbnail = await viewModel.thumbnailImage(for: entry)
         }
+        .onHover { isCellHovered = $0 }
+    }
+
+    private func thumbnailActionButton(
+        systemName: String,
+        help: String,
+        isHovered: Bool,
+        isDestructive: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(isDestructive && isHovered ? Color.red : Color.white)
+                .frame(width: 22, height: 22)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(isHovered ? Color.black.opacity(0.76) : Color.black.opacity(0.56))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.white.opacity(isHovered ? 0.30 : 0.14), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .contentShape(RoundedRectangle(cornerRadius: 6))
+        .help(help)
     }
 
     private var copyButtonBackground: Color {
