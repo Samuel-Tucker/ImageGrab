@@ -87,6 +87,42 @@ public final class CaptureStore {
         save()
     }
 
+    @discardableResult
+    public func rename(id: UUID, to newBaseName: String) -> Bool {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return false }
+        let trimmed = newBaseName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+
+        let invalid = CharacterSet(charactersIn: "/\\:")
+        let sanitized = trimmed.components(separatedBy: invalid).joined()
+        guard !sanitized.isEmpty else { return false }
+
+        let entry = entries[index]
+        let currentURL = capturesDir.appendingPathComponent(entry.filename)
+        let ext = (entry.filename as NSString).pathExtension
+        let newFilename = ext.isEmpty ? sanitized : "\(sanitized).\(ext)"
+
+        if newFilename == entry.filename { return true }
+
+        let newURL = capturesDir.appendingPathComponent(newFilename)
+        if fileManager.fileExists(atPath: newURL.path) { return false }
+
+        do {
+            try fileManager.moveItem(at: currentURL, to: newURL)
+        } catch {
+            return false
+        }
+
+        // Clean up any stale drag export keyed on the old filename
+        try? fileManager.removeItem(at: dragExportURL(for: entry))
+
+        var renamed = entry
+        renamed.filename = newFilename
+        entries[index] = renamed
+        save()
+        return true
+    }
+
     public func path(for entry: CaptureEntry) -> String {
         capturesDir.appendingPathComponent(entry.filename).path
     }

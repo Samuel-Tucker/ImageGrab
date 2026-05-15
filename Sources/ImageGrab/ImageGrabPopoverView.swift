@@ -129,7 +129,8 @@ struct ImageGrabPopoverView: View {
             isCopied: copiedID == entry.id,
             onCopy: { copyPath(for: entry) },
             onQuickView: { viewModel.showQuickView(for: entry) },
-            onDelete: { viewModel.delete(id: entry.id) }
+            onDelete: { viewModel.delete(id: entry.id) },
+            onRename: { newName in viewModel.rename(id: entry.id, to: newName) }
         )
     }
 
@@ -151,9 +152,13 @@ private struct CaptureCell: View {
     let onCopy: () -> Void
     let onQuickView: () -> Void
     let onDelete: () -> Void
+    let onRename: (String) -> Bool
 
     @State private var thumbnail: NSImage?
     @State private var showDeleteConfirm = false
+    @State private var isEditingName = false
+    @State private var draftName = ""
+    @FocusState private var nameFieldFocused: Bool
 
     var body: some View {
         VStack(spacing: 4) {
@@ -233,12 +238,48 @@ private struct CaptureCell: View {
                 .help("Copy capture path")
             }
 
-            // Name
-            Text((entry.filename as NSString).deletingPathExtension)
-                .font(.system(size: 9))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            // Name row with inline rename
+            HStack(spacing: 4) {
+                if isEditingName {
+                    TextField("", text: $draftName, onCommit: commitRename)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 9))
+                        .focused($nameFieldFocused)
+                    Button {
+                        commitRename()
+                    } label: {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 9, weight: .semibold))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Save name")
+                    Button {
+                        cancelRename()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Cancel")
+                } else {
+                    Text((entry.filename as NSString).deletingPathExtension)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button {
+                        startRename()
+                    } label: {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Rename capture")
+                }
+            }
         }
         .contextMenu {
             Button {
@@ -257,6 +298,11 @@ private struct CaptureCell: View {
             } label: {
                 Label("Reveal in Finder", systemImage: "folder")
             }
+            Button {
+                startRename()
+            } label: {
+                Label("Rename", systemImage: "pencil")
+            }
             Divider()
             Button(role: .destructive) {
                 onDelete()
@@ -267,6 +313,32 @@ private struct CaptureCell: View {
         .task(id: entry.filename) {
             thumbnail = await viewModel.thumbnailImage(for: entry)
         }
+    }
+
+    private func startRename() {
+        draftName = (entry.filename as NSString).deletingPathExtension
+        isEditingName = true
+        DispatchQueue.main.async { nameFieldFocused = true }
+    }
+
+    private func commitRename() {
+        let proposed = draftName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let current = (entry.filename as NSString).deletingPathExtension
+        guard !proposed.isEmpty, proposed != current else {
+            cancelRename()
+            return
+        }
+        if !onRename(proposed) {
+            NSSound.beep()
+        }
+        isEditingName = false
+        nameFieldFocused = false
+    }
+
+    private func cancelRename() {
+        isEditingName = false
+        nameFieldFocused = false
+        draftName = ""
     }
 
     private func dragProvider() -> NSItemProvider {

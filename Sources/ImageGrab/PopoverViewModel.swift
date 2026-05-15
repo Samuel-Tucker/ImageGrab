@@ -33,6 +33,14 @@ public final class PopoverViewModel: ObservableObject {
         NSPasteboard.general.setString(path, forType: .string)
     }
 
+    @discardableResult
+    public func rename(id: UUID, to newBaseName: String) -> Bool {
+        store.invalidateThumbnail(for: id)
+        let success = store.rename(id: id, to: newBaseName)
+        refresh()
+        return success
+    }
+
     public func delete(id: UUID) {
         if currentQuickViewEntryID == id {
             dismissQuickView()
