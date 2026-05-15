@@ -57,9 +57,10 @@ public final class CaptureStore {
     }
 
     @discardableResult
-    public func addCapture(image: NSImage) -> CaptureEntry? {
+    public func addCapture(image: NSImage, preferredBaseName: String? = nil) -> CaptureEntry? {
         let timestamp = Self.timestampFormatter.string(from: Date())
-        let url = uniqueCaptureURL(baseName: "capture-\(timestamp)", extension: "png")
+        let baseName = Self.sanitizedBaseName(preferredBaseName) ?? "capture-\(timestamp)"
+        let url = uniqueCaptureURL(baseName: baseName, extension: "png")
         let filename = url.lastPathComponent
 
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
@@ -88,14 +89,26 @@ public final class CaptureStore {
     }
 
     @discardableResult
+    public func replaceCaptureImage(id: UUID, image: NSImage) -> Bool {
+        guard let entry = entries.first(where: { $0.id == id }) else { return false }
+        let url = capturesDir.appendingPathComponent(entry.filename)
+
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return false }
+        guard writePNG(cgImage, to: url) else { return false }
+
+        try? fileManager.removeItem(at: dragExportURL(for: entry))
+        invalidateThumbnail(for: id)
+        save()
+        return true
+    }
+
+    @discardableResult
     public func rename(id: UUID, to newBaseName: String) -> Bool {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { return false }
         let trimmed = newBaseName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
 
-        let invalid = CharacterSet(charactersIn: "/\\:")
-        let sanitized = trimmed.components(separatedBy: invalid).joined()
-        guard !sanitized.isEmpty else { return false }
+        guard let sanitized = Self.sanitizedBaseName(trimmed) else { return false }
 
         let entry = entries[index]
         let currentURL = capturesDir.appendingPathComponent(entry.filename)
@@ -226,6 +239,16 @@ public final class CaptureStore {
         }
         CGImageDestinationAddImage(destination, cgImage, nil)
         return CGImageDestinationFinalize(destination)
+    }
+
+    private static func sanitizedBaseName(_ baseName: String?) -> String? {
+        guard let baseName else { return nil }
+        let trimmed = baseName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let invalid = CharacterSet(charactersIn: "/\\:")
+        let sanitized = trimmed.components(separatedBy: invalid).joined()
+        return sanitized.isEmpty ? nil : sanitized
     }
 
     private static let timestampFormatter: DateFormatter = {

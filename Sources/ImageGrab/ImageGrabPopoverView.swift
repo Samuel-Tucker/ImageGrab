@@ -129,6 +129,7 @@ struct ImageGrabPopoverView: View {
             isCopied: copiedID == entry.id,
             onCopy: { copyPath(for: entry) },
             onQuickView: { viewModel.showQuickView(for: entry) },
+            onEdit: { viewModel.editAnnotations(for: entry) },
             onDelete: { viewModel.delete(id: entry.id) },
             onRename: { newName in viewModel.rename(id: entry.id, to: newName) }
         )
@@ -151,19 +152,23 @@ private struct CaptureCell: View {
     let isCopied: Bool
     let onCopy: () -> Void
     let onQuickView: () -> Void
+    let onEdit: () -> Void
     let onDelete: () -> Void
     let onRename: (String) -> Bool
 
     @State private var thumbnail: NSImage?
     @State private var showDeleteConfirm = false
+    @State private var isPreviewHovered = false
+    @State private var isCopyHovered = false
     @State private var isEditingName = false
+    @State private var isRenameHovered = false
     @State private var draftName = ""
     @FocusState private var nameFieldFocused: Bool
 
     var body: some View {
         VStack(spacing: 4) {
             // Thumbnail with copy bar and quick view button
-            ZStack(alignment: .topTrailing) {
+            ZStack {
                 Group {
                     if let thumbnail {
                         Image(nsImage: thumbnail)
@@ -186,28 +191,47 @@ private struct CaptureCell: View {
                     dragProvider()
                 }
 
-                Button {
-                    showDeleteConfirm = true
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16, weight: .semibold))
-                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(.white, Color.black.opacity(0.65))
-                }
-                .buttonStyle(.plain)
-                .padding(4)
-                .help("Delete capture")
-                .confirmationDialog(
-                    "Delete this capture?",
-                    isPresented: $showDeleteConfirm,
-                    titleVisibility: .visible
-                ) {
-                    Button("Delete", role: .destructive) {
-                        onDelete()
+                VStack {
+                    HStack {
+                        Button {
+                            onEdit()
+                        } label: {
+                            Image(systemName: "pencil.circle.fill")
+                                .font(.system(size: 16, weight: .semibold))
+                                .symbolRenderingMode(.palette)
+                                .foregroundStyle(.white, Color.black.opacity(0.65))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Edit annotations")
+
+                        Spacer()
+
+                        Button {
+                            showDeleteConfirm = true
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 16, weight: .semibold))
+                                .symbolRenderingMode(.palette)
+                                .foregroundStyle(.white, Color.black.opacity(0.65))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Delete capture")
+                        .confirmationDialog(
+                            "Delete this capture?",
+                            isPresented: $showDeleteConfirm,
+                            titleVisibility: .visible
+                        ) {
+                            Button("Delete", role: .destructive) {
+                                onDelete()
+                            }
+                            Button("Cancel", role: .cancel) {}
+                        } message: {
+                            Text("This action cannot be undone.")
+                        }
                     }
-                    Button("Cancel", role: .cancel) {}
-                } message: {
-                    Text("This action cannot be undone.")
+                    .padding(4)
+
+                    Spacer()
                 }
             }
 
@@ -217,11 +241,17 @@ private struct CaptureCell: View {
                 } label: {
                     Label("Preview", systemImage: "eye")
                         .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(isPreviewHovered ? Color.primary : Color.secondary)
                         .frame(maxWidth: .infinity)
                         .frame(height: 24)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(isPreviewHovered ? Color.secondary.opacity(0.24) : Color.secondary.opacity(0.14))
+                        )
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                .buttonStyle(.plain)
+                .contentShape(RoundedRectangle(cornerRadius: 6))
+                .onHover { isPreviewHovered = $0 }
                 .help("Preview capture")
 
                 Button {
@@ -229,12 +259,17 @@ private struct CaptureCell: View {
                 } label: {
                     Label(isCopied ? "Copied" : "Copy Path", systemImage: isCopied ? "checkmark" : "doc.on.doc")
                         .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .frame(height: 24)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(copyButtonBackground)
+                        )
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .tint(isCopied ? .green : .accentColor)
+                .buttonStyle(.plain)
+                .contentShape(RoundedRectangle(cornerRadius: 6))
+                .onHover { isCopyHovered = $0 }
                 .help("Copy capture path")
             }
 
@@ -273,10 +308,17 @@ private struct CaptureCell: View {
                         startRename()
                     } label: {
                         Image(systemName: "pencil")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(isRenameHovered ? Color.accentColor : Color.secondary)
+                            .frame(width: 22, height: 22)
+                            .background(
+                                RoundedRectangle(cornerRadius: 5)
+                                    .fill(isRenameHovered ? Color.accentColor.opacity(0.12) : Color.clear)
+                            )
+                            .contentShape(RoundedRectangle(cornerRadius: 5))
                     }
                     .buttonStyle(.plain)
+                    .onHover { isRenameHovered = $0 }
                     .help("Rename capture")
                 }
             }
@@ -291,6 +333,11 @@ private struct CaptureCell: View {
                 onCopy()
             } label: {
                 Label("Copy Path", systemImage: "doc.on.doc")
+            }
+            Button {
+                onEdit()
+            } label: {
+                Label("Edit Annotations", systemImage: "pencil")
             }
             Button {
                 let path = viewModel.fullPath(for: entry)
@@ -313,6 +360,16 @@ private struct CaptureCell: View {
         .task(id: entry.filename) {
             thumbnail = await viewModel.thumbnailImage(for: entry)
         }
+    }
+
+    private var copyButtonBackground: Color {
+        if isCopyHovered {
+            return Color.black.opacity(0.78)
+        }
+        if isCopied {
+            return Color.green.opacity(0.82)
+        }
+        return Color.accentColor.opacity(0.82)
     }
 
     private func startRename() {

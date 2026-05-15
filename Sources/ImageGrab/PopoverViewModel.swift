@@ -16,6 +16,7 @@ public final class PopoverViewModel: ObservableObject {
     private let store: CaptureStore
     private var currentQuickViewPanel: QuickViewPanel?
     private var currentQuickViewEntryID: UUID?
+    private var currentEditWindow: CapturePreviewWindow?
 
     public init(store: CaptureStore) {
         self.store = store
@@ -105,6 +106,52 @@ public final class PopoverViewModel: ObservableObject {
         currentQuickViewPanel = panel
         panel.show()
         onQuickViewOpened?()
+    }
+
+    public func editAnnotations(for entry: CaptureEntry) {
+        guard let image = decodedImage(for: entry) else {
+            NSSound.beep()
+            return
+        }
+
+        dismissQuickView()
+
+        let baseName = (entry.filename as NSString).deletingPathExtension
+        let preview = CapturePreviewWindow(
+            image: image,
+            initialBaseName: baseName,
+            onSave: { [weak self] editedImage, copyPath, requestedBaseName in
+                guard let self else { return }
+
+                let proposed = requestedBaseName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let current = (entry.filename as NSString).deletingPathExtension
+                if !proposed.isEmpty, proposed != current, !self.rename(id: entry.id, to: proposed) {
+                    NSSound.beep()
+                    self.currentEditWindow = nil
+                    return
+                }
+
+                guard self.store.replaceCaptureImage(id: entry.id, image: editedImage) else {
+                    NSSound.beep()
+                    self.currentEditWindow = nil
+                    return
+                }
+
+                if copyPath, let updatedEntry = self.store.entries.first(where: { $0.id == entry.id }) {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(self.store.path(for: updatedEntry), forType: .string)
+                }
+
+                self.refresh()
+                self.currentEditWindow = nil
+            },
+            onCancel: { [weak self] in
+                self?.currentEditWindow = nil
+            }
+        )
+
+        currentEditWindow = preview
+        preview.show()
     }
 
     public func dismissQuickView() {

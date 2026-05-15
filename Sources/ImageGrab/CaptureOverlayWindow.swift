@@ -3,17 +3,23 @@ import AppKit
 // Preview window shown AFTER native screencapture, for review before saving
 @MainActor
 final class CapturePreviewWindow: NSWindow {
-    private let onSave: @MainActor (NSImage, Bool) -> Void
+    private let onSave: @MainActor (NSImage, Bool, String?) -> Void
     private let onCancel: @MainActor () -> Void
     private let capturedImage: NSImage
     private var annotationOverlay: AnnotationOverlayView!
     private var undoBtn: NSButton!
     private var textBackgroundColorWell: NSColorWell!
+    private var filenameField: NSTextField!
     private var colorButtons: [NSButton] = []
 
     private let presetColors: [NSColor] = [.systemRed, .systemBlue, .systemGreen, .systemYellow, .white]
 
-    init(image: NSImage, onSave: @escaping @MainActor (NSImage, Bool) -> Void, onCancel: @escaping @MainActor () -> Void) {
+    init(
+        image: NSImage,
+        initialBaseName: String? = nil,
+        onSave: @escaping @MainActor (NSImage, Bool, String?) -> Void,
+        onCancel: @escaping @MainActor () -> Void
+    ) {
         self.capturedImage = image
         self.onSave = onSave
         self.onCancel = onCancel
@@ -33,7 +39,7 @@ final class CapturePreviewWindow: NSWindow {
         let displayH = imgH * scale
 
         // Minimum width so toolbars/buttons are always visible
-        let minWindowW: CGFloat = 460
+        let minWindowW: CGFloat = 680
         let windowW = max(displayW, minWindowW)
         let totalH = displayH + bottomBarH + annotBarH
 
@@ -90,6 +96,8 @@ final class CapturePreviewWindow: NSWindow {
         container.addSubview(bottomBar)
 
         contentView = container
+        initialFirstResponder = overlay
+        filenameField.stringValue = initialBaseName ?? defaultCaptureBaseName()
     }
 
     // MARK: - Annotation toolbar
@@ -191,7 +199,7 @@ final class CapturePreviewWindow: NSWindow {
     // MARK: - Bottom toolbar
 
     private func setupBottomBar(_ bar: NSView, width: CGFloat, imgW: CGFloat, imgH: CGFloat) {
-        // Right-align buttons, size label takes remaining space on the left
+        // Right-align buttons, size label and rename field take the left side.
         let saveCopyW: CGFloat = 180
         let saveW: CGFloat = 70
         let cancelW: CGFloat = 80
@@ -205,8 +213,19 @@ final class CapturePreviewWindow: NSWindow {
         let sizeLabel = NSTextField(labelWithString: "\(Int(imgW)) × \(Int(imgH)) px")
         sizeLabel.font = .monospacedSystemFont(ofSize: 11, weight: .medium)
         sizeLabel.textColor = .secondaryLabelColor
-        sizeLabel.frame = NSRect(x: 12, y: 14, width: max(cancelX - 16, 0), height: 20)
+        sizeLabel.frame = NSRect(x: 12, y: 14, width: 96, height: 20)
         bar.addSubview(sizeLabel)
+
+        let nameFieldX: CGFloat = 116
+        let nameFieldW = max(cancelX - nameFieldX - gap, 120)
+        let nameField = NSTextField(frame: NSRect(x: nameFieldX, y: 10, width: nameFieldW, height: 30))
+        nameField.font = .systemFont(ofSize: 13, weight: .medium)
+        nameField.placeholderString = "Name this capture"
+        nameField.bezelStyle = .roundedBezel
+        nameField.lineBreakMode = .byTruncatingMiddle
+        nameField.toolTip = "Rename capture before saving"
+        filenameField = nameField
+        bar.addSubview(nameField)
 
         let cancelBtn = NSButton(title: "Cancel", target: self, action: #selector(cancelClicked))
         cancelBtn.bezelStyle = .rounded
@@ -239,6 +258,11 @@ final class CapturePreviewWindow: NSWindow {
     }
 
     override func keyDown(with event: NSEvent) {
+        if isFilenameFieldEditing {
+            super.keyDown(with: event)
+            return
+        }
+
         // Text editing gets first crack at key events
         if annotationOverlay.handleKeyDown(event) {
             return
@@ -253,6 +277,11 @@ final class CapturePreviewWindow: NSWindow {
             return
         }
         super.keyDown(with: event)
+    }
+
+    private var isFilenameFieldEditing: Bool {
+        guard let editor = filenameField.currentEditor() else { return false }
+        return firstResponder === editor
     }
 
     // MARK: - Actions
@@ -289,18 +318,32 @@ final class CapturePreviewWindow: NSWindow {
         return annotationOverlay.compositeOnto(image: capturedImage)
     }
 
+    private func requestedBaseName() -> String? {
+        filenameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func defaultCaptureBaseName() -> String {
+        "capture-\(Self.timestampFormatter.string(from: Date()))"
+    }
+
     @objc private func saveClicked() {
         orderOut(nil)
-        onSave(finalImage(), false)
+        onSave(finalImage(), false, requestedBaseName())
     }
 
     @objc private func saveAndCopyPathClicked() {
         orderOut(nil)
-        onSave(finalImage(), true)
+        onSave(finalImage(), true, requestedBaseName())
     }
 
     @objc private func cancelClicked() {
         orderOut(nil)
         onCancel()
     }
+
+    private static let timestampFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyyMMdd-HHmmss"
+        return f
+    }()
 }

@@ -134,6 +134,50 @@ final class CaptureStoreTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: store.path(for: second)))
     }
 
+    func testAddCaptureUsesPreferredBaseName() throws {
+        let capturesDirectory = try makeCapturesDirectory()
+        defer { try? FileManager.default.removeItem(at: capturesDirectory) }
+
+        let store = CaptureStore(capturesDirectory: capturesDirectory)
+        let entry = try XCTUnwrap(store.addCapture(image: makeImage(), preferredBaseName: "Important Screenshot"))
+
+        XCTAssertEqual(entry.filename, "Important Screenshot.png")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.path(for: entry)))
+    }
+
+    func testAddCaptureSanitizesPreferredBaseNameAndAvoidsCollision() throws {
+        let capturesDirectory = try makeCapturesDirectory()
+        defer { try? FileManager.default.removeItem(at: capturesDirectory) }
+
+        let store = CaptureStore(capturesDirectory: capturesDirectory)
+        let first = try XCTUnwrap(store.addCapture(image: makeImage(), preferredBaseName: "foo/bar"))
+        let second = try XCTUnwrap(store.addCapture(image: makeImage(), preferredBaseName: "foo/bar"))
+
+        XCTAssertEqual(first.filename, "foobar.png")
+        XCTAssertEqual(second.filename, "foobar-2.png")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.path(for: first)))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.path(for: second)))
+    }
+
+    func testReplaceCaptureImageKeepsEntryAndUpdatesFile() throws {
+        let capturesDirectory = try makeCapturesDirectory()
+        defer { try? FileManager.default.removeItem(at: capturesDirectory) }
+
+        let store = CaptureStore(capturesDirectory: capturesDirectory)
+        let entry = try XCTUnwrap(store.addCapture(image: makeImage(width: 64, height: 48), preferredBaseName: "edited"))
+        let originalAttributes = try FileManager.default.attributesOfItem(atPath: store.path(for: entry))
+        let originalSize = try XCTUnwrap(originalAttributes[.size] as? NSNumber)
+
+        XCTAssertTrue(store.replaceCaptureImage(id: entry.id, image: makeImage(width: 96, height: 72)))
+
+        let updatedEntry = try XCTUnwrap(store.entries.first(where: { $0.id == entry.id }))
+        let updatedAttributes = try FileManager.default.attributesOfItem(atPath: store.path(for: updatedEntry))
+        let updatedSize = try XCTUnwrap(updatedAttributes[.size] as? NSNumber)
+
+        XCTAssertEqual(updatedEntry.filename, "edited.png")
+        XCTAssertNotEqual(originalSize, updatedSize)
+    }
+
     func testClearAllRemovesTrackedFiles() throws {
         let capturesDirectory = try makeCapturesDirectory()
         defer { try? FileManager.default.removeItem(at: capturesDirectory) }

@@ -262,8 +262,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
 
         let preview = CapturePreviewWindow(
             image: image,
-            onSave: { [weak self] img, copyPath in
-                self?.handleCapturedImage(img, copyPath: copyPath)
+            onSave: { [weak self] img, copyPath, baseName in
+                self?.handleCapturedImage(img, copyPath: copyPath, baseName: baseName)
                 self?.previewWindow = nil
             },
             onCancel: { [weak self] in
@@ -274,8 +274,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         preview.show()
     }
 
-    private func handleCapturedImage(_ image: NSImage, copyPath: Bool = false) {
-        guard let entry = captureStore.addCapture(image: image) else {
+    private func handleCapturedImage(_ image: NSImage, copyPath: Bool = false, baseName: String? = nil) {
+        guard let entry = captureStore.addCapture(image: image, preferredBaseName: baseName) else {
             NSSound.beep()
             return
         }

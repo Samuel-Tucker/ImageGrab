@@ -51,6 +51,8 @@ final class AnnotationOverlayView: NSView {
         addCursorRect(bounds, cursor: currentTool == .text ? .iBeam : .crosshair)
     }
 
+    override var acceptsFirstResponder: Bool { true }
+
     func undo() {
         guard !annotations.isEmpty else { return }
         commitTextIfNeeded()
@@ -192,6 +194,7 @@ final class AnnotationOverlayView: NSView {
     // MARK: - Mouse handling
 
     override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
         handlePointerDown(at: convert(event.locationInWindow, from: nil))
     }
 
