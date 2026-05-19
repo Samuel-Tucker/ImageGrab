@@ -23,6 +23,17 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         case region
         case fullScreen
         case lastRegion
+
+        var statusLabel: String {
+            switch self {
+            case .region:
+                "region"
+            case .fullScreen:
+                "full screen"
+            case .lastRegion:
+                "last region"
+            }
+        }
     }
 
     private enum ScreenCaptureRequest {
@@ -185,6 +196,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
             }
         }
 
+        viewModel?.updateHotKeyStatus(
+            regionRegistered: regionRegistered,
+            fullScreenRegistered: fullScreenRegistered
+        )
         NSLog("ImageGrab: region hotkey registration \(regionRegistered ? "succeeded" : "FAILED")")
         NSLog("ImageGrab: full-screen hotkey registration \(fullScreenRegistered ? "succeeded" : "FAILED")")
     }
@@ -206,6 +221,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
 
         // Close popover if open
         closePopover()
+        viewModel?.updateCaptureStatus("Capture: requested \(mode.statusLabel)")
 
         switch mode {
         case .region:
@@ -254,6 +270,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
             return
         }
         captureProcessID = process.processIdentifier
+        viewModel?.updateCaptureStatus("Capture: screencapture running pid \(process.processIdentifier)")
 
         // Poll clipboard for the new screenshot
         let startTime = Date()
@@ -275,6 +292,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
             captureLastSeenChangeCount = pasteboard.changeCount
         } else if Date().timeIntervalSince(startTime) > 120 {
             // Timeout — user likely cancelled
+            viewModel?.updateCaptureStatus("Capture: timed out or cancelled")
             resetCaptureState()
         }
     }
@@ -294,6 +312,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
             return process
         } catch {
             NSSound.beep()
+            viewModel?.updateCaptureStatus("Capture: failed to start screencapture")
             NSLog("ImageGrab: screencapture failed: \(error.localizedDescription)")
             return nil
         }
@@ -310,6 +329,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         }
 
         // Interactive region capture exits without changing the clipboard when the user presses Esc.
+        viewModel?.updateCaptureStatus("Capture: screencapture exited without image")
         resetCaptureState()
     }
 
@@ -325,8 +345,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
     private func handleClipboardCapture() {
         guard let image = NSImage(pasteboard: NSPasteboard.general) else {
             NSSound.beep()
+            viewModel?.updateCaptureStatus("Capture: no image on clipboard")
             return
         }
+        viewModel?.updateCaptureStatus("Capture: preview ready")
 
         let preview = CapturePreviewWindow(
             image: image,
@@ -355,6 +377,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         }
 
         viewModel?.refresh()
+        viewModel?.updateCaptureStatus("Capture: saved")
 
         // Show popover as feedback
         if let button = statusItem?.button, let popover, !popover.isShown {

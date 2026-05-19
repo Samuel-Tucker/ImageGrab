@@ -78,6 +78,18 @@ struct ImageGrabPopoverView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
 
+            VStack(alignment: .leading, spacing: 2) {
+                Text(viewModel.hotKeyStatus)
+                    .lineLimit(1)
+                Text(viewModel.captureStatus)
+                    .lineLimit(1)
+            }
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
+
             Divider()
 
             if viewModel.entries.isEmpty {

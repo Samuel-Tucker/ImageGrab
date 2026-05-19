@@ -7,6 +7,8 @@ public final class PopoverViewModel: ObservableObject {
     @Published public var entries: [CaptureEntry] = []
     @Published public var captureDelay: CaptureDelay = .none
     @Published public var lastCaptureRegion: CaptureRegion?
+    @Published public var hotKeyStatus = "Hotkeys: registering"
+    @Published public var captureStatus = "Capture: idle"
 
     public var canRepeatLastRegion: Bool {
         lastCaptureRegion?.isUsable == true
@@ -35,6 +37,23 @@ public final class PopoverViewModel: ObservableObject {
     public func refresh() {
         entries = store.entries
         syncQuickViewIfNeeded()
+    }
+
+    public func updateHotKeyStatus(regionRegistered: Bool, fullScreenRegistered: Bool) {
+        switch (regionRegistered, fullScreenRegistered) {
+        case (true, true):
+            hotKeyStatus = "Hotkeys: Opt+G and Opt+Cmd+G ready"
+        case (true, false):
+            hotKeyStatus = "Hotkeys: Opt+G ready, full screen failed"
+        case (false, true):
+            hotKeyStatus = "Hotkeys: Opt+G failed, full screen ready"
+        case (false, false):
+            hotKeyStatus = "Hotkeys: registration failed"
+        }
+    }
+
+    public func updateCaptureStatus(_ status: String) {
+        captureStatus = status
     }
 
     public func copyPath(for entry: CaptureEntry) {
