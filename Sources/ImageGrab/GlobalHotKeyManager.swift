@@ -11,7 +11,7 @@ final class GlobalHotKeyManager {
 
     private var nextID: UInt32 = 1
     private var registrations: [UInt32: Registration] = [:]
-    private var eventHandler: EventHandlerRef?
+    private var eventHandlers: [EventHandlerRef] = []
 
     init() {
         installEventHandlerIfNeeded()
@@ -27,17 +27,19 @@ final class GlobalHotKeyManager {
 
         var hotKeyRef: EventHotKeyRef?
         let hotKeyID = EventHotKeyID(signature: Self.signature, id: id)
+        let eventTarget = GetApplicationEventTarget()
 
         let status = RegisterEventHotKey(
             keyCode,
             modifiers,
             hotKeyID,
-            GetApplicationEventTarget(),
+            eventTarget,
             0,
             &hotKeyRef
         )
 
         guard status == noErr, let hotKeyRef else {
+            NSLog("ImageGrab: RegisterEventHotKey failed id=\(id) keyCode=\(keyCode) modifiers=\(modifiers) status=\(status)")
             return false
         }
 
@@ -53,7 +55,7 @@ final class GlobalHotKeyManager {
     }
 
     private func installEventHandlerIfNeeded() {
-        guard eventHandler == nil else { return }
+        guard eventHandlers.isEmpty else { return }
 
         var eventSpec = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
@@ -69,17 +71,22 @@ final class GlobalHotKeyManager {
             return noErr
         }
 
-        let status = InstallEventHandler(
-            GetApplicationEventTarget(),
-            callback,
-            1,
-            &eventSpec,
-            UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()),
-            &eventHandler
-        )
+        for target in [GetApplicationEventTarget(), GetEventDispatcherTarget()] {
+            var handler: EventHandlerRef?
+            let status = InstallEventHandler(
+                target,
+                callback,
+                1,
+                &eventSpec,
+                UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()),
+                &handler
+            )
 
-        if status != noErr {
-            eventHandler = nil
+            if status == noErr, let handler {
+                eventHandlers.append(handler)
+            } else {
+                NSLog("ImageGrab: InstallEventHandler failed status=\(status)")
+            }
         }
     }
 
