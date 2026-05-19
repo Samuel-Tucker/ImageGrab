@@ -3,11 +3,14 @@ import CoreGraphics
 import Foundation
 
 final class RegionHotKeyEventTap {
-    private var eventTap: CFMachPort?
-    private var runLoopSource: CFRunLoopSource?
+    private var eventTaps: [CFMachPort] = []
+    private var runLoopSources: [CFRunLoopSource] = []
     private let action: () -> Void
+    private let onObservedGKey: (String) -> Void
+    private var lastTriggerTime = Date.distantPast
 
-    init(action: @escaping () -> Void) {
+    init(onObservedGKey: @escaping (String) -> Void, action: @escaping () -> Void) {
+        self.onObservedGKey = onObservedGKey
         self.action = action
     }
 
@@ -16,44 +19,49 @@ final class RegionHotKeyEventTap {
     }
 
     func start() -> Bool {
-        guard eventTap == nil else { return true }
+        guard eventTaps.isEmpty else { return true }
 
         let mask = CGEventMask(1 << CGEventType.keyDown.rawValue)
-        guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
-            eventsOfInterest: mask,
-            callback: Self.callback,
-            userInfo: UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
-        ) else {
-            return false
+        for tapLocation in [CGEventTapLocation.cghidEventTap, .cgSessionEventTap] {
+            guard let tap = CGEvent.tapCreate(
+                tap: tapLocation,
+                place: .headInsertEventTap,
+                options: .listenOnly,
+                eventsOfInterest: mask,
+                callback: Self.callback,
+                userInfo: UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+            ) else {
+                continue
+            }
+
+            guard let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0) else {
+                continue
+            }
+            CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+            CGEvent.tapEnable(tap: tap, enable: true)
+
+            eventTaps.append(tap)
+            runLoopSources.append(source)
         }
 
-        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
-        CGEvent.tapEnable(tap: tap, enable: true)
-
-        eventTap = tap
-        runLoopSource = source
-        return true
+        return !eventTaps.isEmpty
     }
 
     func stop() {
-        if let tap = eventTap {
+        for tap in eventTaps {
             CGEvent.tapEnable(tap: tap, enable: false)
         }
-        if let source = runLoopSource {
+        for source in runLoopSources {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
         }
-        eventTap = nil
-        runLoopSource = nil
+        eventTaps.removeAll()
+        runLoopSources.removeAll()
     }
 
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            if let eventTap {
-                CGEvent.tapEnable(tap: eventTap, enable: true)
+            for tap in eventTaps {
+                CGEvent.tapEnable(tap: tap, enable: true)
             }
             return Unmanaged.passUnretained(event)
         }
@@ -68,6 +76,9 @@ final class RegionHotKeyEventTap {
         }
 
         let flags = event.flags
+        let summary = Self.flagSummary(flags)
+        onObservedGKey("Opt+G tap saw G flags=\(summary)")
+
         guard flags.contains(.maskAlternate),
               !flags.contains(.maskCommand),
               !flags.contains(.maskShift),
@@ -75,8 +86,24 @@ final class RegionHotKeyEventTap {
             return Unmanaged.passUnretained(event)
         }
 
+        let now = Date()
+        guard now.timeIntervalSince(lastTriggerTime) > 0.75 else {
+            return Unmanaged.passUnretained(event)
+        }
+        lastTriggerTime = now
         action()
-        return nil
+        return Unmanaged.passUnretained(event)
+    }
+
+    private static func flagSummary(_ flags: CGEventFlags) -> String {
+        var parts: [String] = []
+        if flags.contains(.maskAlternate) { parts.append("opt") }
+        if flags.contains(.maskCommand) { parts.append("cmd") }
+        if flags.contains(.maskShift) { parts.append("shift") }
+        if flags.contains(.maskControl) { parts.append("ctrl") }
+        if flags.contains(.maskAlphaShift) { parts.append("caps") }
+        if flags.contains(.maskSecondaryFn) { parts.append("fn") }
+        return parts.isEmpty ? "none" : parts.joined(separator: "+")
     }
 
     private static let callback: CGEventTapCallBack = { _, type, event, userInfo in

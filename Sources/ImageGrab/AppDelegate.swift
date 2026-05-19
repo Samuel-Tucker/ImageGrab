@@ -237,12 +237,19 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
     private func installRegionHotKeyEventTap() {
         guard regionHotKeyEventTap == nil else { return }
         updateInputPermissionStatus(promptIfNeeded: true)
-        let tap = RegionHotKeyEventTap { [weak self] in
-            Task { @MainActor in
-                self?.viewModel?.updateCaptureStatus("Capture: Opt+G event tap received")
-                self?.startCapture(.region)
+        let tap = RegionHotKeyEventTap(
+            onObservedGKey: { [weak self] message in
+                Task { @MainActor in
+                    self?.viewModel?.updateCaptureStatus("Capture: \(message)")
+                }
+            },
+            action: { [weak self] in
+                Task { @MainActor in
+                    self?.viewModel?.updateCaptureStatus("Capture: Opt+G event tap received")
+                    self?.startCapture(.region)
+                }
             }
-        }
+        )
         let enabled = tap.start()
         regionHotKeyEventTap = enabled ? tap : nil
         viewModel?.updateRegionTapStatus(enabled: enabled)
