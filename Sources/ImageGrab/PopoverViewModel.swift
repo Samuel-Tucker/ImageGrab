@@ -8,6 +8,7 @@ public final class PopoverViewModel: ObservableObject {
     @Published public var captureDelay: CaptureDelay = .none
     @Published public var lastCaptureRegion: CaptureRegion?
     @Published public var hotKeyStatus = "Hotkeys: registering"
+    @Published public var regionTapStatus = "Opt+G tap: starting"
     @Published public var captureStatus = "Capture: idle"
 
     public var canRepeatLastRegion: Bool {
@@ -54,6 +55,12 @@ public final class PopoverViewModel: ObservableObject {
 
     public func updateCaptureStatus(_ status: String) {
         captureStatus = status
+    }
+
+    public func updateRegionTapStatus(enabled: Bool) {
+        regionTapStatus = enabled
+            ? "Opt+G tap: ready"
+            : "Opt+G tap: blocked, check Accessibility"
     }
 
     public func copyPath(for entry: CaptureEntry) {

@@ -81,6 +81,8 @@ struct ImageGrabPopoverView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(viewModel.hotKeyStatus)
                     .lineLimit(1)
+                Text(viewModel.regionTapStatus)
+                    .lineLimit(1)
                 Text(viewModel.captureStatus)
                     .lineLimit(1)
             }

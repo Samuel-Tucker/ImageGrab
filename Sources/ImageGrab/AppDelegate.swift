@@ -12,6 +12,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
     private var popover: NSPopover?
     private var popoverKeyDownMonitor: Any?
     private var regionHotKeyFallbackMonitor: Any?
+    private var regionHotKeyEventTap: RegionHotKeyEventTap?
     private var previewWindow: CapturePreviewWindow?
     private var reopenPopoverAfterQuickView = false
     private var lastCaptureRegion: CaptureRegion?
@@ -63,6 +64,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
     public func applicationWillTerminate(_ notification: Notification) {
         removePopoverKeyDownMonitor()
         removeRegionHotKeyFallbackMonitor()
+        regionHotKeyEventTap?.stop()
         hotKeyManager?.unregisterAll()
     }
 
@@ -203,6 +205,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
             fullScreenRegistered: fullScreenRegistered
         )
         installRegionHotKeyFallbackMonitor()
+        installRegionHotKeyEventTap()
         NSLog("ImageGrab: region hotkey registration \(regionRegistered ? "succeeded" : "FAILED")")
         NSLog("ImageGrab: full-screen hotkey registration \(fullScreenRegistered ? "succeeded" : "FAILED")")
     }
@@ -227,6 +230,19 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         guard let monitor = regionHotKeyFallbackMonitor else { return }
         NSEvent.removeMonitor(monitor)
         regionHotKeyFallbackMonitor = nil
+    }
+
+    private func installRegionHotKeyEventTap() {
+        guard regionHotKeyEventTap == nil else { return }
+        let tap = RegionHotKeyEventTap { [weak self] in
+            Task { @MainActor in
+                self?.viewModel?.updateCaptureStatus("Capture: Opt+G event tap received")
+                self?.startCapture(.region)
+            }
+        }
+        let enabled = tap.start()
+        regionHotKeyEventTap = enabled ? tap : nil
+        viewModel?.updateRegionTapStatus(enabled: enabled)
     }
 
     private var clipboardPollTimer: Timer?
