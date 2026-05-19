@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import Carbon
 import SwiftUI
 
@@ -204,6 +205,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
             regionRegistered: regionRegistered,
             fullScreenRegistered: fullScreenRegistered
         )
+        updateInputPermissionStatus(promptIfNeeded: true)
         installRegionHotKeyFallbackMonitor()
         installRegionHotKeyEventTap()
         NSLog("ImageGrab: region hotkey registration \(regionRegistered ? "succeeded" : "FAILED")")
@@ -234,6 +236,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
 
     private func installRegionHotKeyEventTap() {
         guard regionHotKeyEventTap == nil else { return }
+        updateInputPermissionStatus(promptIfNeeded: true)
         let tap = RegionHotKeyEventTap { [weak self] in
             Task { @MainActor in
                 self?.viewModel?.updateCaptureStatus("Capture: Opt+G event tap received")
@@ -243,6 +246,26 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         let enabled = tap.start()
         regionHotKeyEventTap = enabled ? tap : nil
         viewModel?.updateRegionTapStatus(enabled: enabled)
+    }
+
+    private func updateInputPermissionStatus(promptIfNeeded: Bool) {
+        let accessibilityTrusted: Bool
+        if promptIfNeeded {
+            let key = "AXTrustedCheckOptionPrompt"
+            accessibilityTrusted = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
+        } else {
+            accessibilityTrusted = AXIsProcessTrusted()
+        }
+
+        var inputMonitoringTrusted = CGPreflightListenEventAccess()
+        if promptIfNeeded, !inputMonitoringTrusted {
+            inputMonitoringTrusted = CGRequestListenEventAccess()
+        }
+
+        viewModel?.updatePermissionStatus(
+            accessibility: accessibilityTrusted,
+            inputMonitoring: inputMonitoringTrusted
+        )
     }
 
     private var clipboardPollTimer: Timer?

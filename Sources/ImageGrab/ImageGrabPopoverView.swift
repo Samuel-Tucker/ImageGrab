@@ -83,6 +83,8 @@ struct ImageGrabPopoverView: View {
                     .lineLimit(1)
                 Text(viewModel.regionTapStatus)
                     .lineLimit(1)
+                Text(viewModel.permissionStatus)
+                    .lineLimit(1)
                 Text(viewModel.captureStatus)
                     .lineLimit(1)
             }

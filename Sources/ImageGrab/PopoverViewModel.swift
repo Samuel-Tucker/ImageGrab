@@ -9,6 +9,7 @@ public final class PopoverViewModel: ObservableObject {
     @Published public var lastCaptureRegion: CaptureRegion?
     @Published public var hotKeyStatus = "Hotkeys: registering"
     @Published public var regionTapStatus = "Opt+G tap: starting"
+    @Published public var permissionStatus = "Permissions: checking"
     @Published public var captureStatus = "Capture: idle"
 
     public var canRepeatLastRegion: Bool {
@@ -61,6 +62,19 @@ public final class PopoverViewModel: ObservableObject {
         regionTapStatus = enabled
             ? "Opt+G tap: ready"
             : "Opt+G tap: blocked, check Accessibility"
+    }
+
+    public func updatePermissionStatus(accessibility: Bool, inputMonitoring: Bool) {
+        switch (accessibility, inputMonitoring) {
+        case (true, true):
+            permissionStatus = "Permissions: Accessibility and Input Monitoring ready"
+        case (false, true):
+            permissionStatus = "Permissions: enable Accessibility"
+        case (true, false):
+            permissionStatus = "Permissions: enable Input Monitoring"
+        case (false, false):
+            permissionStatus = "Permissions: enable Accessibility and Input Monitoring"
+        }
     }
 
     public func copyPath(for entry: CaptureEntry) {
