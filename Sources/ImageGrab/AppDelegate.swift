@@ -11,6 +11,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
     private var popoverKeyDownMonitor: Any?
+    private var regionHotKeyFallbackMonitor: Any?
     private var previewWindow: CapturePreviewWindow?
     private var reopenPopoverAfterQuickView = false
     private var lastCaptureRegion: CaptureRegion?
@@ -61,6 +62,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
 
     public func applicationWillTerminate(_ notification: Notification) {
         removePopoverKeyDownMonitor()
+        removeRegionHotKeyFallbackMonitor()
         hotKeyManager?.unregisterAll()
     }
 
@@ -200,8 +202,31 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
             regionRegistered: regionRegistered,
             fullScreenRegistered: fullScreenRegistered
         )
+        installRegionHotKeyFallbackMonitor()
         NSLog("ImageGrab: region hotkey registration \(regionRegistered ? "succeeded" : "FAILED")")
         NSLog("ImageGrab: full-screen hotkey registration \(fullScreenRegistered ? "succeeded" : "FAILED")")
+    }
+
+    private func installRegionHotKeyFallbackMonitor() {
+        guard regionHotKeyFallbackMonitor == nil else { return }
+        regionHotKeyFallbackMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.keyCode == kVK_ANSI_G else { return }
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard flags.contains(.option),
+                  !flags.contains(.command),
+                  !flags.contains(.shift),
+                  !flags.contains(.control) else { return }
+            Task { @MainActor in
+                self?.viewModel?.updateCaptureStatus("Capture: Opt+G fallback received")
+                self?.startCapture(.region)
+            }
+        }
+    }
+
+    private func removeRegionHotKeyFallbackMonitor() {
+        guard let monitor = regionHotKeyFallbackMonitor else { return }
+        NSEvent.removeMonitor(monitor)
+        regionHotKeyFallbackMonitor = nil
     }
 
     private var clipboardPollTimer: Timer?
