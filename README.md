@@ -1,6 +1,6 @@
 # ImageGrab
 
-A lightweight macOS menu bar app for fast native screenshots, quick markup, and drag-and-drop sharing.
+A lightweight macOS menu bar app for fast native screenshots, quick markup, OCR, and drag-and-drop sharing.
 
 ## Screenshots
 
@@ -15,14 +15,17 @@ A lightweight macOS menu bar app for fast native screenshots, quick markup, and 
 ## Features
 
 - **Global hotkeys** — Press `Opt+G` for a region capture or `Opt+Cmd+G` for a full-screen capture
+- **Delayed capture** — Choose `Now`, `3s`, `5s`, or `10s` from the menu bar popover before your next capture
 - **Preview before saving** — Review every capture before it is written to disk
+- **Copy Text / OCR** — Extract text from a preview or saved capture using Apple Vision, then copy it to the clipboard
 - **Annotation tools** — Pen, box, arrow, and text with color presets plus a text background picker
 - **Movable annotations** — Click existing text, boxes, arrows, or pen strokes to reposition them
 - **Editable text markup** — Click text annotations to reopen editing, then adjust font size with `Cmd+=`, `Cmd+-`, or the scroll wheel
 - **Quick view panel** — Hover a thumbnail and click the eye icon for a floating larger preview
 - **Thumbnail grid** — Browse up to 50 recent captures from the menu bar popover
+- **Rename and edit later** — Rename saved captures inline or reopen them for annotation edits
 - **Drag and drop** — Drag captures into chat apps, Gmail, Slack, Discord, browsers, Finder, terminals, and Electron apps
-- **Context menu** — Preview, copy path, reveal in Finder, or delete any capture
+- **Context menu** — Preview, copy path, copy text, edit annotations, reveal in Finder, rename, or delete any capture
 - **Compatible output** — Saves PNG files for reliable drag-and-drop uploads into chat, email, and browser apps
 
 ## Requirements
@@ -34,22 +37,36 @@ ImageGrab uses the built-in macOS screenshot tool for region and full-screen cap
 
 ## Install
 
-For end users, the simplest install path is a GitHub Release download:
+### Manual install
 
-- `.zip` for direct app extraction
-- `.dmg` for drag-to-Applications install
+The lowest-friction manual install path is the latest GitHub Release:
 
-Release artifacts are published at:
+`https://github.com/Samuel-Tucker/ImageGrab/releases/latest`
 
-`https://github.com/Samuel-Tucker/ImageGrab/releases`
+Download `ImageGrab-<version>.dmg`, open it, then drag `ImageGrab.app` into `/Applications`.
+
+The release also includes `ImageGrab-<version>-macOS.zip` for direct extraction and `SHA256SUMS` for checksum verification.
+
+### Agent/source install
+
+For a coding agent or a developer building from source:
+
+```sh
+git clone https://github.com/Samuel-Tucker/ImageGrab.git
+cd ImageGrab
+./Scripts/build_app.sh
+open "$HOME/Applications/ImageGrab.app"
+```
+
+The build script creates `~/Applications/ImageGrab.app`, registers it with Launch Services, and attempts to codesign it with the local `ImageGrab Dev` identity if that certificate exists. If that identity is unavailable, it applies an ad-hoc app signature so macOS sees a coherent bundle identity.
 
 ### Current macOS note
 
-Without Apple Developer signing/notarization, macOS may warn on first launch. The simplest path is:
+The smoothest public install requires Developer ID signing and notarization. If a release is not signed/notarized, macOS may warn on first launch. In that case:
 
-1. Download the `.dmg`
-2. Drag `ImageGrab.app` into `/Applications`
-3. Right-click the app and choose **Open** once
+1. Move `ImageGrab.app` to `/Applications`
+2. Right-click the app and choose **Open**
+3. Confirm the warning once
 
 If macOS still blocks launch, remove quarantine manually:
 
@@ -59,13 +76,11 @@ xattr -dr com.apple.quarantine /Applications/ImageGrab.app
 
 ## Build
 
+Use this when you want a local development build rather than a GitHub Release install:
+
 ```sh
-git clone https://github.com/Samuel-Tucker/ImageGrab.git
-cd ImageGrab
 ./Scripts/build_app.sh
 ```
-
-The build script creates `~/Applications/ImageGrab.app`, registers it with Launch Services, and attempts to codesign it with the local `ImageGrab Dev` identity if that certificate exists. If that identity is unavailable, it applies an ad-hoc app signature so macOS sees a coherent bundle identity.
 
 For a non-destructive review build, point `APP_DIR` somewhere temporary:
 
@@ -82,13 +97,32 @@ DIST_DIR=/tmp/imagegrab-release SIGN_IDENTITY=none ./Scripts/build_release_asset
 
 That produces an ad-hoc signed `.zip`, `.dmg`, and `SHA256SUMS`. Gatekeeper can still warn or reject unsigned, unnotarized downloads from the internet; Developer ID signing and notarization are required for the smoothest public install.
 
+Release builds smoke-check the zip, DMG, app signature, Applications shortcut, and checksum file by default. Set `VERIFY_RELEASE_ASSETS=0` only when debugging the packaging script itself.
+
+## Local Qwen Harness
+
+For local model experiments, this repo includes an ImageGrab-specific Qwen wrapper:
+
+```sh
+bin/imagegrab-qwen status
+bin/imagegrab-qwen plan "Add Copy Text to the preview window"
+bin/imagegrab-qwen patch "Add Copy Text to the preview window"
+bin/imagegrab-qwen review
+```
+
+It expects the local Qwen 30B coder server from the Brain harness on port `18081`,
+gathers ImageGrab-specific file context, and checks returned patches with
+`git apply --check`. It does not apply model patches automatically. See
+[docs/qwen-harness.md](docs/qwen-harness.md).
+
 ## Usage
 
 1. Press `Opt+G` for a region capture or `Opt+Cmd+G` for a full-screen capture.
 2. For region captures, select a screen region with the native macOS crosshair.
-3. Annotate in the preview window if needed.
-4. Click `Save` or `Save & Copy Path`.
-5. Use the menu bar popover to preview, copy paths, or drag captures into other apps.
+3. If you need a menu, tooltip, or hover state, choose a `3s`, `5s`, or `10s` delay from the popover first.
+4. Annotate in the preview window if needed, or click `Copy Text` to extract OCR text from the capture.
+5. Click `Save` or `Save & Copy Path`.
+6. Use the menu bar popover to preview, copy paths, copy text, rename, edit, delete, or drag captures into other apps.
 
 Captures are stored in `~/Library/Application Support/ImageGrab/Captures/` for fresh installs. Existing local development installs that already have `~/repos/ImageGrab/captures/` keep using that legacy folder.
 
@@ -99,6 +133,7 @@ Captures are stored in `~/Library/Application Support/ImageGrab/Captures/` for f
 | `Opt+G` | Start region capture |
 | `Opt+Cmd+G` | Start full-screen capture |
 | `Cmd+Z` | Undo the last committed annotation |
+| `Cmd+Shift+Z` | Redo the last undone annotation |
 | `Esc` | Cancel capture, clear selection, or finish text editing |
 | `Return` | Save & Copy Path from the preview window |
 | `Cmd+=` / `Cmd+-` | Increase or decrease selected text size |
@@ -116,7 +151,7 @@ Maintainers can build release artifacts with:
 ./Scripts/build_release_assets.sh v0.1.0
 ```
 
-With Apple credentials configured, the workflow signs and notarizes the app. Without them, it still publishes usable unsigned `.zip` and `.dmg` assets from version tags. Full setup details are in [docs/releasing.md](docs/releasing.md).
+With Apple credentials configured, the workflow signs and notarizes the app. Without them, it still publishes ad-hoc signed `.zip` and `.dmg` assets from version tags with first-launch notes. Full setup details are in [docs/releasing.md](docs/releasing.md).
 
 ## License
 

@@ -28,6 +28,7 @@ final class AnnotationOverlayView: NSView {
     var onAnnotationsChanged: (@MainActor () -> Void)?
 
     private var annotations: [Annotation] = []
+    private var redoStack: [Annotation] = []
     private var currentAnnotation: Annotation?
     private var selectedAnnotationIndex: Int?
     private var movingAnnotationIndex: Int?
@@ -46,6 +47,8 @@ final class AnnotationOverlayView: NSView {
     private var cursorTimer: Timer?
 
     var hasAnnotations: Bool { !annotations.isEmpty || (isEditingText && !editingText.isEmpty) }
+    var canUndo: Bool { !annotations.isEmpty }
+    var canRedo: Bool { !redoStack.isEmpty }
 
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: currentTool == .text ? .iBeam : .crosshair)
@@ -54,19 +57,33 @@ final class AnnotationOverlayView: NSView {
     override var acceptsFirstResponder: Bool { true }
 
     func undo() {
+        commitTextIfNeeded(preservingRedo: true)
         guard !annotations.isEmpty else { return }
-        commitTextIfNeeded()
-        annotations.removeLast()
+        redoStack.append(annotations.removeLast())
         selectedAnnotationIndex = nil
+        needsDisplay = true
+        onAnnotationsChanged?()
+    }
+
+    func redo() {
+        commitTextIfNeeded(preservingRedo: true)
+        guard let annotation = redoStack.popLast() else { return }
+        annotations.append(annotation)
+        selectedAnnotationIndex = annotations.indices.last
         needsDisplay = true
         onAnnotationsChanged?()
     }
 
     /// Finalize any in-progress text annotation
     func commitTextIfNeeded() {
+        commitTextIfNeeded(preservingRedo: false)
+    }
+
+    private func commitTextIfNeeded(preservingRedo: Bool) {
         guard isEditingText else { return }
         if !editingText.isEmpty {
             if let editingAnnotationIndex, annotations.indices.contains(editingAnnotationIndex) {
+                if !preservingRedo { clearRedoStack() }
                 annotations[editingAnnotationIndex] = Annotation(
                     tool: .text,
                     color: currentColor,
@@ -78,6 +95,7 @@ final class AnnotationOverlayView: NSView {
                 )
                 selectedAnnotationIndex = editingAnnotationIndex
             } else {
+                if !preservingRedo { clearRedoStack() }
                 let annotation = Annotation(
                     tool: .text,
                     color: currentColor,
@@ -92,6 +110,7 @@ final class AnnotationOverlayView: NSView {
             }
             onAnnotationsChanged?()
         } else if let editingAnnotationIndex, annotations.indices.contains(editingAnnotationIndex) {
+            if !preservingRedo { clearRedoStack() }
             annotations.remove(at: editingAnnotationIndex)
             selectedAnnotationIndex = nil
             onAnnotationsChanged?()
@@ -107,7 +126,9 @@ final class AnnotationOverlayView: NSView {
     func handleKeyDown(_ event: NSEvent) -> Bool {
         if isEditingText {
             // Cmd+Z while editing: cancel current text
-            if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "z" {
+            if event.modifierFlags.contains(.command),
+               !event.modifierFlags.contains(.shift),
+               event.charactersIgnoringModifiers == "z" {
                 isEditingText = false
                 editingAnnotationIndex = nil
                 editingText = ""
@@ -124,8 +145,15 @@ final class AnnotationOverlayView: NSView {
             }
 
             switch event.keyCode {
-            case 36: // Return - finalize
-                commitTextIfNeeded()
+            case 36, 76: // Return/Enter
+                if event.modifierFlags.contains(.shift) {
+                    commitTextIfNeeded()
+                } else {
+                    editingText.append("\n")
+                    cursorVisible = true
+                    needsDisplay = true
+                    onAnnotationsChanged?()
+                }
                 return true
             case 53: // Escape - finalize
                 commitTextIfNeeded()
@@ -176,6 +204,7 @@ final class AnnotationOverlayView: NSView {
             }
         case 51: // Backspace - delete selected annotation
             annotations.remove(at: selectedAnnotationIndex)
+            clearRedoStack()
             self.selectedAnnotationIndex = nil
             needsDisplay = true
             onAnnotationsChanged?()
@@ -202,6 +231,11 @@ final class AnnotationOverlayView: NSView {
         commitTextIfNeeded()
 
         if let hitIndex = hitTestAnnotation(at: point) {
+            if currentTool == .text, annotations[hitIndex].tool == .text {
+                beginEditingTextAnnotation(at: hitIndex)
+                return
+            }
+
             currentAnnotation = nil
             selectedAnnotationIndex = hitIndex
             movingAnnotationIndex = hitIndex
@@ -241,6 +275,7 @@ final class AnnotationOverlayView: NSView {
                     annotations[movingAnnotationIndex].points[pointIndex].x += delta.x
                     annotations[movingAnnotationIndex].points[pointIndex].y += delta.y
                 }
+                clearRedoStack()
                 self.lastDragPoint = point
                 didMoveSelection = true
                 needsDisplay = true
@@ -291,6 +326,7 @@ final class AnnotationOverlayView: NSView {
         guard let annotation = currentAnnotation else { return }
         if annotation.points.count >= 2 {
             annotations.append(annotation)
+            clearRedoStack()
             selectedAnnotationIndex = annotations.indices.last
             onAnnotationsChanged?()
         }
@@ -385,12 +421,19 @@ final class AnnotationOverlayView: NSView {
 
     private func adjustSelectedTextFontSize(at index: Int, by delta: CGFloat) {
         annotations[index].fontSize = clampedFontSize(annotations[index].fontSize + delta)
+        clearRedoStack()
         needsDisplay = true
         onAnnotationsChanged?()
     }
 
     private func clampedFontSize(_ value: CGFloat) -> CGFloat {
         max(10, min(72, value))
+    }
+
+    private func clearRedoStack() {
+        if !redoStack.isEmpty {
+            redoStack.removeAll()
+        }
     }
 
     // MARK: - Drawing
@@ -507,13 +550,14 @@ final class AnnotationOverlayView: NSView {
             .font: font,
             .foregroundColor: color,
         ]
-        let attrStr = NSAttributedString(string: displayText, attributes: attrs)
-        let textSize = attrStr.size()
+        let lines = textLines(for: displayText)
+        let lineHeight = textLineHeight(for: font)
+        let textSize = multilineTextSize(lines: lines, font: font, lineHeight: lineHeight)
 
         let padding: CGFloat = 4
         let bgRect = NSRect(
             x: position.x - padding,
-            y: position.y - padding,
+            y: position.y - (textSize.height - lineHeight) - padding,
             width: textSize.width + padding * 2,
             height: textSize.height + padding * 2
         )
@@ -524,14 +568,21 @@ final class AnnotationOverlayView: NSView {
         NSBezierPath(roundedRect: bgRect, xRadius: 4, yRadius: 4).fill()
 
         // Text
-        attrStr.draw(at: position)
+        for (index, line) in lines.enumerated() {
+            let lineText = line.isEmpty ? " " : line
+            NSAttributedString(string: lineText, attributes: attrs)
+                .draw(at: CGPoint(x: position.x, y: position.y - CGFloat(index) * lineHeight))
+        }
 
         // Blinking cursor
         if showCursor {
-            let cursorX = position.x + (text.isEmpty ? 0 : textSize.width)
+            let lastLine = lines.last ?? ""
+            let lastLineWidth = lastLine.isEmpty ? 0 : NSAttributedString(string: lastLine, attributes: attrs).size().width
+            let cursorX = position.x + lastLineWidth
+            let cursorY = position.y - CGFloat(max(lines.count - 1, 0)) * lineHeight
             let cursorPath = NSBezierPath()
-            cursorPath.move(to: CGPoint(x: cursorX, y: position.y + 2))
-            cursorPath.line(to: CGPoint(x: cursorX, y: position.y + textSize.height - 2))
+            cursorPath.move(to: CGPoint(x: cursorX, y: cursorY + 2))
+            cursorPath.line(to: CGPoint(x: cursorX, y: cursorY + lineHeight - 2))
             cursorPath.lineWidth = 1.5
             color.setStroke()
             cursorPath.stroke()
@@ -618,14 +669,33 @@ final class AnnotationOverlayView: NSView {
     private func textBackgroundRect(text: String, at position: CGPoint, fontSize: CGFloat) -> NSRect {
         let displayText = text.isEmpty ? " " : text
         let font = NSFont.systemFont(ofSize: fontSize, weight: .medium)
-        let textSize = NSAttributedString(string: displayText, attributes: [.font: font]).size()
+        let lineHeight = textLineHeight(for: font)
+        let textSize = multilineTextSize(lines: textLines(for: displayText), font: font, lineHeight: lineHeight)
         let padding: CGFloat = 4
         return NSRect(
             x: position.x - padding,
-            y: position.y - padding,
+            y: position.y - (textSize.height - lineHeight) - padding,
             width: textSize.width + padding * 2,
             height: textSize.height + padding * 2
         )
+    }
+
+    private func textLines(for text: String) -> [String] {
+        text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    }
+
+    private func textLineHeight(for font: NSFont) -> CGFloat {
+        ceil(font.ascender - font.descender + font.leading)
+    }
+
+    private func multilineTextSize(lines: [String], font: NSFont, lineHeight: CGFloat) -> NSSize {
+        let attrs: [NSAttributedString.Key: Any] = [.font: font]
+        let width = lines
+            .map { line in
+                NSAttributedString(string: line.isEmpty ? " " : line, attributes: attrs).size().width
+            }
+            .max() ?? 0
+        return NSSize(width: width, height: lineHeight * CGFloat(max(lines.count, 1)))
     }
 
     private func normalizedRect(from start: CGPoint, to end: CGPoint) -> NSRect {

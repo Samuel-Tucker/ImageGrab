@@ -1,5 +1,27 @@
 import AppKit
 
+private final class PreviewActionButton: NSButton {
+    var normalBackgroundColor: NSColor = .controlBackgroundColor {
+        didSet { updateBackground() }
+    }
+    var highlightedBackgroundColor: NSColor = .selectedControlColor {
+        didSet { updateBackground() }
+    }
+
+    override var isHighlighted: Bool {
+        didSet { updateBackground() }
+    }
+
+    override var isEnabled: Bool {
+        didSet { updateBackground() }
+    }
+
+    private func updateBackground() {
+        alphaValue = isEnabled ? 1 : 0.55
+        layer?.backgroundColor = (isHighlighted ? highlightedBackgroundColor : normalBackgroundColor).cgColor
+    }
+}
+
 // Preview window shown AFTER native screencapture, for review before saving
 @MainActor
 final class CapturePreviewWindow: NSWindow {
@@ -8,9 +30,13 @@ final class CapturePreviewWindow: NSWindow {
     private let capturedImage: NSImage
     private var annotationOverlay: AnnotationOverlayView!
     private var undoBtn: NSButton!
+    private var redoBtn: NSButton!
     private var textBackgroundColorWell: NSColorWell!
     private var filenameField: NSTextField!
+    private var copyTextBtn: NSButton!
     private var colorButtons: [NSButton] = []
+    private var ocrPopover: NSPopover?
+    private var ocrPopoverDelegate: OCRPopoverCloseHandler?
 
     private let presetColors: [NSColor] = [.systemRed, .systemBlue, .systemGreen, .systemYellow, .white]
 
@@ -78,7 +104,8 @@ final class CapturePreviewWindow: NSWindow {
         // Annotation overlay (on top of image, same frame)
         let overlay = AnnotationOverlayView(frame: NSRect(x: imageX, y: bottomBarH, width: displayW, height: displayH))
         overlay.onAnnotationsChanged = { [weak self, weak overlay] in
-            self?.undoBtn.isEnabled = overlay?.hasAnnotations ?? false
+            self?.undoBtn.isEnabled = overlay?.canUndo ?? false
+            self?.redoBtn.isEnabled = overlay?.canRedo ?? false
         }
         annotationOverlay = overlay
         container.addSubview(overlay)
@@ -185,8 +212,33 @@ final class CapturePreviewWindow: NSWindow {
         undo.target = self
         undo.action = #selector(undoClicked)
         undo.isEnabled = false
+        undo.toolTip = "Undo (Cmd+Z)"
         undoBtn = undo
         bar.addSubview(undo)
+        x += 32
+
+        let redo = NSButton(frame: NSRect(x: x, y: 6, width: 28, height: 28))
+        redo.image = NSImage(systemSymbolName: "arrow.uturn.forward", accessibilityDescription: "Redo")!
+        redo.isBordered = false
+        redo.target = self
+        redo.action = #selector(redoClicked)
+        redo.isEnabled = false
+        redo.toolTip = "Redo (Cmd+Shift+Z)"
+        redoBtn = redo
+        bar.addSubview(redo)
+
+        let copyTextW: CGFloat = 116
+        let copyTextBtn = styledPreviewButton(
+            title: "Copy Text",
+            frame: NSRect(x: bar.frame.width - copyTextW - 12, y: 6, width: copyTextW, height: 28),
+            backgroundColor: NSColor.systemGreen.withAlphaComponent(0.18),
+            highlightedColor: NSColor.systemGreen.withAlphaComponent(0.28),
+            textColor: .labelColor,
+            action: #selector(copyTextClicked)
+        )
+        copyTextBtn.toolTip = "Copy recognized text from this capture"
+        self.copyTextBtn = copyTextBtn
+        bar.addSubview(copyTextBtn)
     }
 
     private func separatorView(at x: CGFloat, height: CGFloat, y: CGFloat) -> NSView {
@@ -227,10 +279,14 @@ final class CapturePreviewWindow: NSWindow {
         filenameField = nameField
         bar.addSubview(nameField)
 
-        let cancelBtn = NSButton(title: "Cancel", target: self, action: #selector(cancelClicked))
-        cancelBtn.bezelStyle = .rounded
-        cancelBtn.controlSize = .large
-        cancelBtn.frame = NSRect(x: cancelX, y: 10, width: cancelW, height: 30)
+        let cancelBtn = styledPreviewButton(
+            title: "Cancel",
+            frame: NSRect(x: cancelX, y: 10, width: cancelW, height: 30),
+            backgroundColor: NSColor.systemRed.withAlphaComponent(0.14),
+            highlightedColor: NSColor.systemRed.withAlphaComponent(0.24),
+            textColor: .labelColor,
+            action: #selector(cancelClicked)
+        )
         bar.addSubview(cancelBtn)
 
         let saveBtn = NSButton(title: "Save", target: self, action: #selector(saveClicked))
@@ -239,12 +295,56 @@ final class CapturePreviewWindow: NSWindow {
         saveBtn.frame = NSRect(x: saveX, y: 10, width: saveW, height: 30)
         bar.addSubview(saveBtn)
 
-        let saveCopyBtn = NSButton(title: "Save & Copy Path", target: self, action: #selector(saveAndCopyPathClicked))
-        saveCopyBtn.bezelStyle = .rounded
-        saveCopyBtn.controlSize = .large
+        let saveCopyBtn = styledPreviewButton(
+            title: "Save & Copy Path",
+            frame: NSRect(x: saveCopyX, y: 10, width: saveCopyW, height: 30),
+            backgroundColor: NSColor.systemBlue.withAlphaComponent(0.16),
+            highlightedColor: NSColor.systemBlue.withAlphaComponent(0.26),
+            textColor: .labelColor,
+            action: #selector(saveAndCopyPathClicked),
+            borderColor: NSColor.systemBlue.withAlphaComponent(0.45)
+        )
         saveCopyBtn.keyEquivalent = "\r"
-        saveCopyBtn.frame = NSRect(x: saveCopyX, y: 10, width: saveCopyW, height: 30)
         bar.addSubview(saveCopyBtn)
+    }
+
+    private func styledPreviewButton(
+        title: String,
+        frame: NSRect,
+        backgroundColor: NSColor,
+        highlightedColor: NSColor,
+        textColor: NSColor,
+        action: Selector,
+        borderColor: NSColor? = nil
+    ) -> NSButton {
+        let button = PreviewActionButton(title: title, target: self, action: action)
+        button.frame = frame
+        button.isBordered = false
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 8
+        button.normalBackgroundColor = backgroundColor
+        button.highlightedBackgroundColor = highlightedColor
+        button.layer?.backgroundColor = backgroundColor.cgColor
+        if let borderColor {
+            button.layer?.borderColor = borderColor.cgColor
+            button.layer?.borderWidth = 1
+        }
+        button.controlSize = .large
+        setPreviewButtonTitle(button, title, textColor: textColor)
+        return button
+    }
+
+    private func setPreviewButtonTitle(_ button: NSButton, _ title: String, textColor: NSColor = .labelColor) {
+        button.title = title
+        let attributedTitle = NSAttributedString(
+            string: title,
+            attributes: [
+                .foregroundColor: textColor,
+                .font: NSFont.systemFont(ofSize: 13, weight: .medium)
+            ]
+        )
+        button.attributedTitle = attributedTitle
+        button.attributedAlternateTitle = attributedTitle
     }
 
     // MARK: - Window
@@ -265,6 +365,12 @@ final class CapturePreviewWindow: NSWindow {
 
         // Text editing gets first crack at key events
         if annotationOverlay.handleKeyDown(event) {
+            return
+        }
+        if event.modifierFlags.contains(.command),
+           event.modifierFlags.contains(.shift),
+           event.charactersIgnoringModifiers == "z" {
+            annotationOverlay.redo()
             return
         }
         if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "z" {
@@ -311,6 +417,41 @@ final class CapturePreviewWindow: NSWindow {
 
     @objc private func undoClicked() {
         annotationOverlay.undo()
+    }
+
+    @objc private func redoClicked() {
+        annotationOverlay.redo()
+    }
+
+    @objc private func copyTextClicked() {
+        // Toggle: clicking again while open closes the popover.
+        if let existing = ocrPopover, existing.isShown {
+            existing.performClose(nil)
+            return
+        }
+
+        let presenter = OCRResultPresenter(image: capturedImage)
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = true
+
+        let controller = OCRResultViewController(
+            presenter: presenter,
+            onCopy: { [weak self] in self?.ocrPopover?.performClose(nil) },
+            onDismiss: { [weak self] in self?.ocrPopover?.performClose(nil) }
+        )
+        popover.contentViewController = controller
+
+        let delegate = OCRPopoverCloseHandler { [weak self] in
+            guard let self else { return }
+            self.ocrPopover = nil
+            self.ocrPopoverDelegate = nil
+        }
+        popover.delegate = delegate
+        ocrPopoverDelegate = delegate
+
+        ocrPopover = popover
+        popover.show(relativeTo: copyTextBtn.bounds, of: copyTextBtn, preferredEdge: .maxY)
     }
 
     private func finalImage() -> NSImage {

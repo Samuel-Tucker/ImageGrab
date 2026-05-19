@@ -5,6 +5,9 @@ struct ImageGrabPopoverView: View {
     @ObservedObject var viewModel: PopoverViewModel
     let onClose: () -> Void
     @State private var copiedID: UUID?
+    @State private var copiedTextID: UUID?
+    @State private var noTextID: UUID?
+    @State private var recognizingTextID: UUID?
     @State private var showClearAllConfirm = false
 
     var body: some View {
@@ -69,7 +72,7 @@ struct ImageGrabPopoverView: View {
             Divider()
 
             // Footer actions stay low-emphasis so capture actions remain primary.
-            HStack {
+            HStack(spacing: 6) {
                 Button {
                     viewModel.openFolder()
                 } label: {
@@ -84,6 +87,50 @@ struct ImageGrabPopoverView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Open captures folder")
+
+                Button {
+                    viewModel.repeatLastRegion()
+                } label: {
+                    Image(systemName: "repeat")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(viewModel.canRepeatLastRegion ? Color.accentColor : .secondary)
+                        .frame(width: 28, height: 24)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(viewModel.canRepeatLastRegion ? Color.accentColor.opacity(0.16) : Color.secondary.opacity(0.12))
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(!viewModel.canRepeatLastRegion)
+                .help(viewModel.canRepeatLastRegion ? "Repeat last selected region" : "Select a region once to enable repeat capture")
+
+                Menu {
+                    ForEach(CaptureDelay.allCases) { option in
+                        Button {
+                            viewModel.captureDelay = option
+                        } label: {
+                            if viewModel.captureDelay == option {
+                                Label(option.label, systemImage: "checkmark")
+                            } else {
+                                Text(option.label)
+                            }
+                        }
+                    }
+                } label: {
+                    Label(viewModel.captureDelay.label, systemImage: "timer")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(viewModel.captureDelay == .none ? .secondary : Color.accentColor)
+                        .padding(.horizontal, 10)
+                        .frame(height: 24)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(viewModel.captureDelay == .none ? Color.secondary.opacity(0.12) : Color.accentColor.opacity(0.16))
+                        )
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Delay before the next capture begins")
 
                 Spacer()
 
@@ -127,7 +174,11 @@ struct ImageGrabPopoverView: View {
             entry: entry,
             viewModel: viewModel,
             isCopied: copiedID == entry.id,
+            isTextCopied: copiedTextID == entry.id,
+            isNoText: noTextID == entry.id,
+            isRecognizingText: recognizingTextID == entry.id,
             onCopy: { copyPath(for: entry) },
+            onCopyText: { copyText(for: entry) },
             onQuickView: { viewModel.showQuickView(for: entry) },
             onEdit: { viewModel.editAnnotations(for: entry) },
             onDelete: { viewModel.delete(id: entry.id) },
@@ -142,6 +193,29 @@ struct ImageGrabPopoverView: View {
             if copiedID == entry.id { copiedID = nil }
         }
     }
+
+    private func copyText(for entry: CaptureEntry) {
+        guard recognizingTextID == nil else { return }
+        recognizingTextID = entry.id
+        copiedTextID = nil
+        noTextID = nil
+
+        Task {
+            let success = await viewModel.copyText(for: entry)
+            recognizingTextID = nil
+            if success {
+                copiedTextID = entry.id
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    if copiedTextID == entry.id { copiedTextID = nil }
+                }
+            } else {
+                noTextID = entry.id
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                    if noTextID == entry.id { noTextID = nil }
+                }
+            }
+        }
+    }
 }
 
 // MARK: - CaptureCell (async thumbnail loading)
@@ -150,7 +224,11 @@ private struct CaptureCell: View {
     let entry: CaptureEntry
     let viewModel: PopoverViewModel
     let isCopied: Bool
+    let isTextCopied: Bool
+    let isNoText: Bool
+    let isRecognizingText: Bool
     let onCopy: () -> Void
+    let onCopyText: () -> Void
     let onQuickView: () -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
@@ -159,14 +237,17 @@ private struct CaptureCell: View {
     @State private var thumbnail: NSImage?
     @State private var showDeleteConfirm = false
     @State private var isCellHovered = false
-    @State private var isPreviewHovered = false
-    @State private var isEditHovered = false
-    @State private var isDeleteHovered = false
+    @State private var hoveredOverlayAction: ThumbnailAction?
     @State private var isCopyHovered = false
+    @State private var isFullWidthCopyTextHovered = false
     @State private var isEditingName = false
     @State private var isRenameHovered = false
     @State private var draftName = ""
     @FocusState private var nameFieldFocused: Bool
+
+    fileprivate enum ThumbnailAction: Hashable {
+        case preview, copyText, edit, delete
+    }
 
     var body: some View {
         VStack(spacing: 5) {
@@ -201,27 +282,36 @@ private struct CaptureCell: View {
                             thumbnailActionButton(
                                 systemName: "eye",
                                 help: "Preview capture",
-                                isHovered: isPreviewHovered,
+                                isHovered: hoveredOverlayAction == .preview,
                                 action: onQuickView
                             )
-                            .onHover { isPreviewHovered = $0 }
+                            .onHover { setHoveredOverlayAction(.preview, hovering: $0) }
+
+                            thumbnailActionButton(
+                                systemName: isRecognizingText ? "hourglass" : "text.viewfinder",
+                                help: isRecognizingText ? "Recognizing text" : "Copy text from capture",
+                                isHovered: hoveredOverlayAction == .copyText,
+                                action: onCopyText
+                            )
+                            .disabled(isRecognizingText)
+                            .onHover { setHoveredOverlayAction(.copyText, hovering: $0) }
 
                             thumbnailActionButton(
                                 systemName: "scribble.variable",
                                 help: "Edit annotations",
-                                isHovered: isEditHovered,
+                                isHovered: hoveredOverlayAction == .edit,
                                 action: onEdit
                             )
-                            .onHover { isEditHovered = $0 }
+                            .onHover { setHoveredOverlayAction(.edit, hovering: $0) }
 
                             thumbnailActionButton(
                                 systemName: "trash",
                                 help: "Delete capture",
-                                isHovered: isDeleteHovered,
+                                isHovered: hoveredOverlayAction == .delete,
                                 isDestructive: true,
                                 action: { showDeleteConfirm = true }
                             )
-                            .onHover { isDeleteHovered = $0 }
+                            .onHover { setHoveredOverlayAction(.delete, hovering: $0) }
                             .confirmationDialog(
                                 "Delete this capture?",
                                 isPresented: $showDeleteConfirm,
@@ -243,7 +333,35 @@ private struct CaptureCell: View {
 
                     Spacer()
                 }
+
+                // Transient helper text for the currently-hovered overlay button.
+                // Lives inside the thumbnail so it disappears with the icon strip
+                // and never adds permanent vertical clutter.
+                if let label = hoveredOverlayActionLabel {
+                    VStack {
+                        Spacer()
+                        Text(label)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(
+                                Capsule()
+                                    .fill(Color.black.opacity(0.78))
+                            )
+                            .overlay(
+                                Capsule()
+                                    .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                            )
+                            .padding(.bottom, 6)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+                }
             }
+            .animation(.easeOut(duration: 0.12), value: hoveredOverlayAction)
 
             Button {
                 onCopy()
@@ -262,6 +380,25 @@ private struct CaptureCell: View {
             .contentShape(RoundedRectangle(cornerRadius: 6))
             .onHover { isCopyHovered = $0 }
             .help("Copy capture path")
+
+            Button {
+                onCopyText()
+            } label: {
+                Label(copyTextTitle, systemImage: copyTextIcon)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 24)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(copyTextButtonBackground)
+                    )
+            }
+            .buttonStyle(.plain)
+            .disabled(isRecognizingText)
+            .contentShape(RoundedRectangle(cornerRadius: 6))
+            .onHover { isFullWidthCopyTextHovered = $0 }
+            .help("Copy detected text from capture")
 
             // Name row with inline rename
             HStack(spacing: 4) {
@@ -317,6 +454,12 @@ private struct CaptureCell: View {
             } label: {
                 Label("Copy Path", systemImage: "doc.on.doc")
             }
+            Button {
+                onCopyText()
+            } label: {
+                Label("Copy Text", systemImage: "text.viewfinder")
+            }
+            .disabled(isRecognizingText)
             Button {
                 onEdit()
             } label: {
@@ -380,6 +523,52 @@ private struct CaptureCell: View {
             return Color.green.opacity(0.82)
         }
         return Color.accentColor.opacity(0.82)
+    }
+
+    private var copyTextTitle: String {
+        if isRecognizingText { return "Reading Text" }
+        if isTextCopied { return "Text Copied" }
+        if isNoText { return "No Text" }
+        return "Copy Text"
+    }
+
+    private var copyTextIcon: String {
+        if isRecognizingText { return "hourglass" }
+        if isTextCopied { return "checkmark" }
+        if isNoText { return "exclamationmark.triangle" }
+        return "text.viewfinder"
+    }
+
+    private var copyTextButtonBackground: Color {
+        if isNoText { return Color.orange.opacity(0.86) }
+        if isTextCopied { return Color.green.opacity(0.82) }
+        if isFullWidthCopyTextHovered || isRecognizingText { return Color.black.opacity(0.78) }
+        return Color.blue.opacity(0.82)
+    }
+
+    private var hoveredOverlayActionLabel: String? {
+        guard isCellHovered, let action = hoveredOverlayAction else { return nil }
+        switch action {
+        case .preview:
+            return "Preview"
+        case .copyText:
+            if isRecognizingText { return "Reading Text…" }
+            if isTextCopied { return "Text Copied" }
+            if isNoText { return "No Text Found" }
+            return "Copy Text"
+        case .edit:
+            return "Edit Annotations"
+        case .delete:
+            return "Delete"
+        }
+    }
+
+    private func setHoveredOverlayAction(_ action: ThumbnailAction, hovering: Bool) {
+        if hovering {
+            hoveredOverlayAction = action
+        } else if hoveredOverlayAction == action {
+            hoveredOverlayAction = nil
+        }
     }
 
     private func startRename() {

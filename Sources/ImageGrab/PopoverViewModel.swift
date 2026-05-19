@@ -5,9 +5,16 @@ import ImageIO
 @MainActor
 public final class PopoverViewModel: ObservableObject {
     @Published public var entries: [CaptureEntry] = []
+    @Published public var captureDelay: CaptureDelay = .none
+    @Published public var lastCaptureRegion: CaptureRegion?
+
+    public var canRepeatLastRegion: Bool {
+        lastCaptureRegion?.isUsable == true
+    }
 
     /// Called when a drag starts so the popover can stay open during the session
     public var onDragStarted: (() -> Void)?
+    public var onRepeatLastRegion: (() -> Void)?
 
     /// Called to keep/release the popover while quick view is open
     public var onQuickViewOpened: (() -> Void)?
@@ -35,6 +42,26 @@ public final class PopoverViewModel: ObservableObject {
     }
 
     @discardableResult
+    public func copyText(for entry: CaptureEntry) async -> Bool {
+        let url = URL(fileURLWithPath: store.path(for: entry))
+        do {
+            let text = try await TextRecognizer.recognizeText(at: url)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else {
+                NSSound.beep()
+                return false
+            }
+
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            return true
+        } catch {
+            NSSound.beep()
+            return false
+        }
+    }
+
+    @discardableResult
     public func rename(id: UUID, to newBaseName: String) -> Bool {
         store.invalidateThumbnail(for: id)
         let success = store.rename(id: id, to: newBaseName)
@@ -59,6 +86,14 @@ public final class PopoverViewModel: ObservableObject {
 
     public func openFolder() {
         NSWorkspace.shared.open(store.capturesDirectory)
+    }
+
+    public func repeatLastRegion() {
+        guard canRepeatLastRegion else {
+            NSSound.beep()
+            return
+        }
+        onRepeatLastRegion?()
     }
 
     public func thumbnailImage(for entry: CaptureEntry) async -> NSImage? {

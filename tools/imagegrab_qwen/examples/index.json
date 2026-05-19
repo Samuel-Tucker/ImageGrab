@@ -1,0 +1,25 @@
+{
+  "examples": [
+    {
+      "slug": "ocr-popover",
+      "file": "ocr-popover.md",
+      "kind": "golden",
+      "summary": "Local Apple Vision OCR / Copy Text wired through PopoverViewModel into the popover thumbnail UI.",
+      "keywords": ["ocr", "copy text", "vision", "recognized text", "textrecognizer", "popover", "thumbnail copy text"]
+    },
+    {
+      "slug": "hover-helper-overlay",
+      "file": "hover-helper-overlay.md",
+      "kind": "golden",
+      "summary": "Single-enum hovered-action state + in-thumbnail capsule caption for overlay icon buttons.",
+      "keywords": ["hover", "tooltip", "helper text", "overlay button", "thumbnail action", "caption", "affordance"]
+    },
+    {
+      "slug": "preview-copy-text-failure",
+      "file": "preview-copy-text-failure.md",
+      "kind": "anti-example",
+      "summary": "Recorded prior failures when adding Copy Text to CapturePreviewWindow (hallucinated store/entry, duplicated Save & Copy Path, placeholder index hashes).",
+      "keywords": ["preview", "capturepreviewwindow", "copy text", "bottom bar", "save & copy path", "preview ocr"]
+    }
+  ]
+}

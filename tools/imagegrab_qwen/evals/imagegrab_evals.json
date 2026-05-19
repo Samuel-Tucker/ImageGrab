@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "description": "Deterministic eval spec for ImageGrab qwen-local. Each task declares expected file selection, forbidden touch paths, and the prompt-lint expectations the harness uses. The runner exercises the harness without calling Qwen, so it stays green even when port 18081 is down.",
+  "tasks": [
+    {
+      "id": "preview-copy-text",
+      "kind": "patch",
+      "task": "Add a Copy Text button to the CapturePreviewWindow bottom bar that runs OCR on capturedImage and copies the result.",
+      "expected_files": [
+        "Sources/ImageGrab/CaptureOverlayWindow.swift",
+        "Sources/ImageGrab/TextRecognizer.swift"
+      ],
+      "forbidden_files": [
+        "Sources/ImageGrab/ImageGrabPopoverView.swift",
+        "Sources/ImageGrab/PopoverViewModel.swift",
+        "Sources/ImageGrab/AppDelegate.swift"
+      ],
+      "forbidden_symbols": ["store.path(for:", "OCRTextRecognizer", "OCRService"],
+      "expected_examples": ["preview-copy-text-failure"],
+      "patch_lint_must_catch": [
+        "preview-window Copy Text patch references store/entry; CapturePreviewWindow has capturedImage instead",
+        "patch appears to duplicate the existing Save & Copy Path button setup",
+        "patch uses placeholder git index hashes",
+        "patch touches forbidden files for preview OCR"
+      ]
+    },
+    {
+      "id": "ocr-test",
+      "kind": "patch",
+      "task": "Add a TextRecognizer unit test that renders a known string into an NSImage and asserts recognizeText returns text containing that string.",
+      "expected_files": [
+        "Sources/ImageGrab/TextRecognizer.swift"
+      ],
+      "forbidden_files": [
+        "Sources/ImageGrab/AppDelegate.swift"
+      ],
+      "forbidden_symbols": ["OCRTextRecognizer"],
+      "expected_examples": ["ocr-popover"]
+    },
+    {
+      "id": "delayed-capture-plan",
+      "kind": "plan",
+      "task": "Plan delayed capture: a 3/5/10-second countdown hotkey that triggers a region capture so users can capture menus and hover states.",
+      "expected_files": [
+        "Sources/ImageGrab/AppDelegate.swift",
+        "Sources/ImageGrab/GlobalHotKeyManager.swift",
+        "Sources/ImageGrab/CaptureStore.swift"
+      ],
+      "forbidden_files": [],
+      "forbidden_symbols": [],
+      "expected_examples": []
+    },
+    {
+      "id": "popover-ui-polish",
+      "kind": "patch",
+      "task": "Polish the popover hover overlay: make the helper text caption inside the thumbnail also surface the current Copy Text recognition state (Reading / Text Copied / No Text Found).",
+      "expected_files": [
+        "Sources/ImageGrab/ImageGrabPopoverView.swift"
+      ],
+      "forbidden_files": [
+        "Sources/ImageGrab/PopoverViewModel.swift",
+        "Sources/ImageGrab/AppDelegate.swift"
+      ],
+      "forbidden_symbols": ["DispatchQueue.main.async"],
+      "expected_examples": ["hover-helper-overlay"]
+    },
+    {
+      "id": "capture-lifecycle-review",
+      "kind": "review",
+      "task": "Review the current diff for capture-lifecycle regressions: hotkey ownership, cancelled-capture state reset, popover-vs-preview window race conditions.",
+      "expected_files": [
+        "Sources/ImageGrab/ImageGrabPopoverView.swift",
+        "Sources/ImageGrab/CaptureOverlayWindow.swift",
+        "Sources/ImageGrab/PopoverViewModel.swift"
+      ],
+      "forbidden_files": [],
+      "forbidden_symbols": [],
+      "expected_examples": []
+    }
+  ]
+}

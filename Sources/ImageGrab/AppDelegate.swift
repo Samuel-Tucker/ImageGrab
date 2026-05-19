@@ -13,6 +13,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
     private var popoverKeyDownMonitor: Any?
     private var previewWindow: CapturePreviewWindow?
     private var reopenPopoverAfterQuickView = false
+    private var lastCaptureRegion: CaptureRegion?
 
     public override init() {
         super.init()
@@ -21,13 +22,22 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
     private enum CaptureMode {
         case region
         case fullScreen
+        case lastRegion
+    }
+
+    private enum ScreenCaptureRequest {
+        case interactiveRegion
+        case fullScreen
+        case region(CaptureRegion)
 
         var screencaptureArguments: [String] {
             switch self {
-            case .region:
+            case .interactiveRegion:
                 ["-i", "-c"]
             case .fullScreen:
                 ["-c"]
+            case .region(let region):
+                ["-R\(region.screencaptureArgument)", "-c"]
             }
         }
     }
@@ -77,6 +87,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
             DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) {
                 self?.popover?.behavior = .transient
             }
+        }
+
+        vm.onRepeatLastRegion = { [weak self] in
+            self?.startCapture(.lastRegion)
         }
 
         // Quick View needs to sit above the thumbnail list. The macOS status-item
@@ -171,19 +185,63 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
     private var isCaptureInProgress = false
     private var captureLastSeenChangeCount = 0
     private var captureProcessID: Int32?
+    private var pendingCountdownPanel: CaptureCountdownPanel?
 
     private func startCapture(_ mode: CaptureMode) {
+        // While a countdown is pending, re-triggering the same hotkey cancels it.
+        if pendingCountdownPanel != nil {
+            cancelPendingCountdown()
+            return
+        }
         guard !isCaptureInProgress else { return }
         isCaptureInProgress = true
 
         // Close popover if open
         closePopover()
 
+        switch mode {
+        case .region:
+            beginCaptureAfterOptionalDelay(.interactiveRegion)
+        case .lastRegion:
+            guard let lastCaptureRegion else {
+                NSSound.beep()
+                resetCaptureState()
+                return
+            }
+            beginCaptureAfterOptionalDelay(.region(lastCaptureRegion))
+        case .fullScreen:
+            beginCaptureAfterOptionalDelay(.fullScreen)
+        }
+    }
+
+    private func beginCaptureAfterOptionalDelay(_ request: ScreenCaptureRequest) {
+        let delaySeconds = viewModel?.captureDelay.seconds ?? 0
+        if delaySeconds > 0 {
+            let panel = CaptureCountdownPanel(seconds: delaySeconds) { [weak self] in
+                guard let self else { return }
+                self.pendingCountdownPanel = nil
+                self.beginScreenCaptureProcess(request)
+            }
+            pendingCountdownPanel = panel
+            panel.start()
+            return
+        }
+
+        beginScreenCaptureProcess(request)
+    }
+
+    private func cancelPendingCountdown() {
+        pendingCountdownPanel?.teardown()
+        pendingCountdownPanel = nil
+        resetCaptureState()
+    }
+
+    private func beginScreenCaptureProcess(_ request: ScreenCaptureRequest) {
         // Record current clipboard state, then ask macOS screencapture to write
         // the selected/full-screen image to the clipboard.
         captureLastSeenChangeCount = NSPasteboard.general.changeCount
 
-        guard let process = runScreenCapture(mode) else {
+        guard let process = runScreenCapture(request) else {
             resetCaptureState()
             return
         }
@@ -213,10 +271,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         }
     }
 
-    private func runScreenCapture(_ mode: CaptureMode) -> Process? {
+    private func runScreenCapture(_ request: ScreenCaptureRequest) -> Process? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        process.arguments = mode.screencaptureArguments
+        process.arguments = request.screencaptureArguments
         process.terminationHandler = { [weak self] finishedProcess in
             let processID = finishedProcess.processIdentifier
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
@@ -252,6 +310,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         clipboardPollTimer = nil
         isCaptureInProgress = false
         captureProcessID = nil
+        pendingCountdownPanel?.teardown()
+        pendingCountdownPanel = nil
     }
 
     private func handleClipboardCapture() {

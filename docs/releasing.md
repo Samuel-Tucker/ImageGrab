@@ -9,9 +9,11 @@ This repo supports GitHub Releases that publish both a `.zip` and a `.dmg` for t
 If Apple secrets are not configured, the GitHub Actions release job still:
 
 1. Builds the app bundle
-2. Creates a `.zip`
-3. Creates a drag-install `.dmg`
-4. Uploads `.zip`, `.dmg`, and checksums to GitHub Releases
+2. Applies an ad-hoc signature so the bundle has a coherent code signature
+3. Creates a `.zip`
+4. Creates a drag-install `.dmg` with an `/Applications` shortcut
+5. Verifies the zip, DMG, app signature, and checksums
+6. Uploads `.zip`, `.dmg`, and checksums to GitHub Releases
 
 This is the best no-Apple-account distribution path. Users may need to right-click the app and choose **Open** on first launch, or remove the quarantine attribute manually.
 
@@ -26,7 +28,8 @@ If Apple secrets are configured, the release flow additionally:
 5. Staples the notarization ticket to the app.
 6. Creates a drag-install `.dmg`.
 7. Signs and notarizes the `.dmg`.
-8. Uploads the `.zip`, `.dmg`, and checksums to GitHub Releases.
+8. Verifies the zip, DMG, app signature, and checksums.
+9. Uploads the `.zip`, `.dmg`, and checksums to GitHub Releases.
 
 ## Required GitHub Actions secrets for signed/notarized releases
 
@@ -80,6 +83,16 @@ APPLE_API_PRIVATE_KEY="$(cat ~/AuthKey_ABC123XYZ.p8)" \
 ```
 
 Artifacts are written to `dist/<version>/`.
+
+The release script validates generated assets by default. It checks that:
+
+- `SHA256SUMS` matches the generated zip and DMG
+- the zip extracts to `ImageGrab.app`
+- the DMG mounts and contains `ImageGrab.app`
+- the DMG contains an `Applications` shortcut for drag install
+- the app bundle passes `codesign --verify --deep --strict`
+
+Set `VERIFY_RELEASE_ASSETS=0` only when debugging the packaging script itself.
 
 ## Homebrew cask follow-on
 
