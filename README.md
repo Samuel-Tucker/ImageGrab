@@ -15,6 +15,7 @@ A lightweight macOS menu bar app for fast native screenshots, quick markup, OCR,
 ## Features
 
 - **Global hotkeys** — Press `Opt+G` for a region capture or `Opt+Cmd+G` for a full-screen capture
+- **Popover capture buttons** — Start region or full-screen capture from the menu bar popover if a global shortcut is unavailable
 - **Delayed capture** — Choose `Now`, `3s`, `5s`, or `10s` from the menu bar popover before your next capture
 - **Preview before saving** — Review every capture before it is written to disk
 - **Copy Text / OCR** — Extract text from a preview or saved capture using Apple Vision, then copy it to the clipboard
@@ -117,7 +118,7 @@ gathers ImageGrab-specific file context, and checks returned patches with
 
 ## Usage
 
-1. Press `Opt+G` for a region capture or `Opt+Cmd+G` for a full-screen capture.
+1. Press `Opt+G` for a region capture or `Opt+Cmd+G` for a full-screen capture, or use the `Region` / `Full Screen` buttons in the menu bar popover.
 2. For region captures, select a screen region with the native macOS crosshair.
 3. If you need a menu, tooltip, or hover state, choose a `3s`, `5s`, or `10s` delay from the popover first.
 4. Annotate in the preview window if needed, or click `Copy Text` to extract OCR text from the capture.

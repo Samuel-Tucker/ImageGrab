@@ -14,6 +14,8 @@ public final class PopoverViewModel: ObservableObject {
 
     /// Called when a drag starts so the popover can stay open during the session
     public var onDragStarted: (() -> Void)?
+    public var onCaptureRegion: (() -> Void)?
+    public var onCaptureFullScreen: (() -> Void)?
     public var onRepeatLastRegion: (() -> Void)?
 
     /// Called to keep/release the popover while quick view is open
@@ -86,6 +88,14 @@ public final class PopoverViewModel: ObservableObject {
 
     public func openFolder() {
         NSWorkspace.shared.open(store.capturesDirectory)
+    }
+
+    public func captureRegion() {
+        onCaptureRegion?()
+    }
+
+    public func captureFullScreen() {
+        onCaptureFullScreen?()
     }
 
     public func repeatLastRegion() {

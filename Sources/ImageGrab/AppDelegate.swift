@@ -89,6 +89,14 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
             }
         }
 
+        vm.onCaptureRegion = { [weak self] in
+            self?.startCapture(.region)
+        }
+
+        vm.onCaptureFullScreen = { [weak self] in
+            self?.startCapture(.fullScreen)
+        }
+
         vm.onRepeatLastRegion = { [weak self] in
             self?.startCapture(.lastRegion)
         }
