@@ -8,7 +8,7 @@ public final class PopoverViewModel: ObservableObject {
     @Published public var captureDelay: CaptureDelay = .none
     @Published public var lastCaptureRegion: CaptureRegion?
     @Published public var hotKeyStatus = "Hotkeys: registering"
-    @Published public var regionTapStatus = "Opt+G tap: starting"
+    @Published public var regionTapStatus = "Fn+G tap: starting"
     @Published public var permissionStatus = "Permissions: checking"
     @Published public var captureStatus = "Capture: idle"
 
@@ -68,8 +68,8 @@ public final class PopoverViewModel: ObservableObject {
 
     public func updateRegionTapStatus(enabled: Bool) {
         regionTapStatus = enabled
-            ? "Opt+G tap: ready"
-            : "Opt+G tap: blocked, check Accessibility"
+            ? "Fn+G / Opt+G tap: ready"
+            : "Fn+G / Opt+G tap: blocked, check Accessibility"
     }
 
     public func updatePermissionStatus(accessibility: Bool, inputMonitoring: Bool) {

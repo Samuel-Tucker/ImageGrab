@@ -255,7 +255,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
             },
             action: { [weak self] in
                 Task { @MainActor in
-                    self?.viewModel?.updateCaptureStatus("Capture: Opt+G event tap received")
+                    self?.viewModel?.updateCaptureStatus("Capture: Fn/Opt+G event tap received")
                     self?.startCapture(.region)
                 }
             }

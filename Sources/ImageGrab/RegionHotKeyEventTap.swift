@@ -77,9 +77,13 @@ final class RegionHotKeyEventTap {
 
         let flags = event.flags
         let summary = Self.flagSummary(flags)
-        onObservedGKey("Opt+G tap saw G flags=\(summary)")
+        onObservedGKey("G tap saw G flags=\(summary)")
 
-        guard flags.contains(.maskAlternate),
+        let isOptionRegionShortcut = flags.contains(.maskAlternate)
+            && !flags.contains(.maskSecondaryFn)
+        let isFunctionRegionShortcut = flags.contains(.maskSecondaryFn)
+            && !flags.contains(.maskAlternate)
+        guard isOptionRegionShortcut || isFunctionRegionShortcut,
               !flags.contains(.maskCommand),
               !flags.contains(.maskShift),
               !flags.contains(.maskControl) else {
