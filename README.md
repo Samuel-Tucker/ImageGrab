@@ -14,7 +14,7 @@ A lightweight macOS menu bar app for fast native screenshots, quick markup, OCR,
 
 ## Features
 
-- **Global hotkeys** — Press `Opt+G` for a region capture or `Opt+Cmd+G` for a full-screen capture
+- **Global hotkeys** — Press `Ctrl+Cmd+G` for region capture or `Opt+Cmd+G` for full-screen capture. `Opt+G` is still attempted as a legacy region shortcut on systems that do not reserve it.
 - **Popover capture buttons** — Start region or full-screen capture from the menu bar popover if a global shortcut is unavailable
 - **Delayed capture** — Choose `Now`, `3s`, `5s`, or `10s` from the menu bar popover before your next capture
 - **Preview before saving** — Review every capture before it is written to disk
@@ -118,7 +118,7 @@ gathers ImageGrab-specific file context, and checks returned patches with
 
 ## Usage
 
-1. Press `Opt+G` for a region capture or `Opt+Cmd+G` for a full-screen capture, or use the `Region` / `Full Screen` buttons in the menu bar popover.
+1. Press `Ctrl+Cmd+G` for a region capture or `Opt+Cmd+G` for a full-screen capture, or use the `Region` / `Full Screen` buttons in the menu bar popover.
 2. For region captures, select a screen region with the native macOS crosshair.
 3. If you need a menu, tooltip, or hover state, choose a `3s`, `5s`, or `10s` delay from the popover first.
 4. Annotate in the preview window if needed, or click `Copy Text` to extract OCR text from the capture.
@@ -131,7 +131,8 @@ Captures are stored in `~/Library/Application Support/ImageGrab/Captures/` for f
 
 | Shortcut | Action |
 |----------|--------|
-| `Opt+G` | Start region capture |
+| `Ctrl+Cmd+G` | Start region capture |
+| `Opt+G` | Legacy region capture where macOS/input sources allow it |
 | `Opt+Cmd+G` | Start full-screen capture |
 | `Cmd+Z` | Undo the last committed annotation |
 | `Cmd+Shift+Z` | Redo the last undone annotation |

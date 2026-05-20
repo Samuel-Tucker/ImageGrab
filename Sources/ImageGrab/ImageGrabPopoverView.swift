@@ -22,7 +22,7 @@ struct ImageGrabPopoverView: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .help("Opt+G: region capture\nOpt+Cmd+G: full screen capture")
+                .help("Ctrl+Cmd+G: region capture\nOpt+G: legacy region capture\nOpt+Cmd+G: full screen capture")
                 Spacer()
                 Text("\(viewModel.entries.count) captures")
                     .font(.caption)
@@ -103,7 +103,7 @@ struct ImageGrabPopoverView: View {
                         .foregroundStyle(.secondary)
                     Text("No captures yet")
                         .foregroundStyle(.secondary)
-                    Text("Press Opt+G for region or Opt+Cmd+G for full screen")
+                    Text("Press Ctrl+Cmd+G for region or Opt+Cmd+G for full screen")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }

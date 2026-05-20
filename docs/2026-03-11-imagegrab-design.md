@@ -1,6 +1,6 @@
 # ImageGrab Design Spec
 
-Historical note: this was the initial product sketch. The current app uses `Opt+G`
+Historical note: this was the initial product sketch. The current app uses `Ctrl+Cmd+G`
 for region capture and `Opt+Cmd+G` for full-screen capture, and no longer includes
 rename or auto-rename behavior.
 
@@ -12,11 +12,11 @@ macOS menu bar app to capture images, save to a folder, show thumbnails, preview
 - Badge dot when new uncategorized images exist
 
 ## Global Hotkey
-- Opt+G to capture region
+- Ctrl+Cmd+G to capture region
 - Opt+Cmd+G to capture full screen
 
 ## Capture Flow
-1. User presses Opt+G or Opt+Cmd+G
+1. User presses Ctrl+Cmd+G or Opt+Cmd+G
 2. App triggers the native macOS screenshot shortcut to capture to clipboard
 3. User reviews and optionally annotates the capture in the preview window
 4. Image is saved to `~/repos/ImageGrab/captures/` with a timestamp filename

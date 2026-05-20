@@ -41,17 +41,25 @@ public final class PopoverViewModel: ObservableObject {
         syncQuickViewIfNeeded()
     }
 
-    public func updateHotKeyStatus(regionRegistered: Bool, fullScreenRegistered: Bool) {
-        switch (regionRegistered, fullScreenRegistered) {
+    public func updateHotKeyStatus(
+        optionRegionRegistered: Bool,
+        alternateRegionRegistered: Bool,
+        fullScreenRegistered: Bool
+    ) {
+        let regionLabel: String
+        switch (optionRegionRegistered, alternateRegionRegistered) {
         case (true, true):
-            hotKeyStatus = "Hotkeys: Opt+G and Opt+Cmd+G ready"
+            regionLabel = "Opt+G / Ctrl+Cmd+G"
         case (true, false):
-            hotKeyStatus = "Hotkeys: Opt+G ready, full screen failed"
+            regionLabel = "Opt+G"
         case (false, true):
-            hotKeyStatus = "Hotkeys: Opt+G failed, full screen ready"
+            regionLabel = "Ctrl+Cmd+G"
         case (false, false):
-            hotKeyStatus = "Hotkeys: registration failed"
+            regionLabel = "region failed"
         }
+
+        let fullScreenLabel = fullScreenRegistered ? "Opt+Cmd+G" : "full screen failed"
+        hotKeyStatus = "Hotkeys: \(regionLabel), \(fullScreenLabel)"
     }
 
     public func updateCaptureStatus(_ status: String) {

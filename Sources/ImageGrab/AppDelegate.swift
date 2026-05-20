@@ -184,12 +184,20 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
     }
 
     private func registerHotKey() {
-        // Opt+G: region capture. Opt+Cmd+G: full-screen capture.
+        // Region capture: Ctrl+Cmd+G is the reliable default; Opt+G is kept
+        // as a best-effort legacy shortcut because some input sources consume it.
+        // Full-screen capture remains Opt+Cmd+G.
         let manager = GlobalHotKeyManager()
         hotKeyManager = manager
         let keyCode = UInt32(kVK_ANSI_G)
 
-        let regionRegistered = manager.register(keyCode: keyCode, modifiers: UInt32(optionKey)) { [weak self] in
+        let optionRegionRegistered = manager.register(keyCode: keyCode, modifiers: UInt32(optionKey)) { [weak self] in
+            Task { @MainActor in
+                self?.startCapture(.region)
+            }
+        }
+
+        let alternateRegionRegistered = manager.register(keyCode: keyCode, modifiers: UInt32(controlKey | cmdKey)) { [weak self] in
             Task { @MainActor in
                 self?.startCapture(.region)
             }
@@ -202,13 +210,15 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         }
 
         viewModel?.updateHotKeyStatus(
-            regionRegistered: regionRegistered,
+            optionRegionRegistered: optionRegionRegistered,
+            alternateRegionRegistered: alternateRegionRegistered,
             fullScreenRegistered: fullScreenRegistered
         )
         updateInputPermissionStatus(promptIfNeeded: true)
         installRegionHotKeyFallbackMonitor()
         installRegionHotKeyEventTap()
-        NSLog("ImageGrab: region hotkey registration \(regionRegistered ? "succeeded" : "FAILED")")
+        NSLog("ImageGrab: option-region hotkey registration \(optionRegionRegistered ? "succeeded" : "FAILED")")
+        NSLog("ImageGrab: alternate-region hotkey registration \(alternateRegionRegistered ? "succeeded" : "FAILED")")
         NSLog("ImageGrab: full-screen hotkey registration \(fullScreenRegistered ? "succeeded" : "FAILED")")
     }
 
