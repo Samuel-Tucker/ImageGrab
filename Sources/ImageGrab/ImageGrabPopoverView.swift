@@ -42,60 +42,6 @@ struct ImageGrabPopoverView: View {
 
             Divider()
 
-            HStack(spacing: 8) {
-                Button {
-                    viewModel.captureRegion()
-                } label: {
-                    Label("Region", systemImage: "crop")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 30)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(Color.accentColor.opacity(0.86))
-                        )
-                }
-                .buttonStyle(.plain)
-                .help("Start region capture")
-
-                Button {
-                    viewModel.captureFullScreen()
-                } label: {
-                    Label("Full Screen", systemImage: "macwindow")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 30)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(Color.blue.opacity(0.82))
-                        )
-                }
-                .buttonStyle(.plain)
-                .help("Start full-screen capture")
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(viewModel.hotKeyStatus)
-                    .lineLimit(1)
-                Text(viewModel.regionTapStatus)
-                    .lineLimit(1)
-                Text(viewModel.permissionStatus)
-                    .lineLimit(1)
-                Text(viewModel.captureStatus)
-                    .lineLimit(1)
-            }
-            .font(.system(size: 10, weight: .medium))
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12)
-            .padding(.bottom, 8)
-
-            Divider()
-
             if viewModel.entries.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "camera.viewfinder")
