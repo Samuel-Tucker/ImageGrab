@@ -53,10 +53,10 @@ final class AnnotationOverlayViewTests: XCTestCase {
         overlay.handlePointerDown(at: CGPoint(x: 40, y: 40))
         XCTAssertTrue(overlay.debugIsEditingText)
 
-        XCTAssertTrue(overlay.handleKeyDown(key("H")))
-        XCTAssertTrue(overlay.handleKeyDown(key("i")))
-        XCTAssertTrue(overlay.handleKeyDown(key("\r", keyCode: 36, modifierFlags: .shift)))
+        overlay.debugEditingText = "Hi"
+        overlay.debugCommitEditing()
 
+        XCTAssertFalse(overlay.debugIsEditingText)
         XCTAssertEqual(overlay.debugAnnotations.count, 1)
         XCTAssertEqual(overlay.debugAnnotations[0].text, "Hi")
         assertPoint(overlay.debugAnnotations[0].points[0], x: 40, y: 40)
@@ -70,43 +70,49 @@ final class AnnotationOverlayViewTests: XCTestCase {
         assertPoint(overlay.debugAnnotations[0].points[0], x: 60, y: 70)
     }
 
+    func testCommittingEmptyTextDiscardsAnnotation() throws {
+        let overlay = makeOverlay()
+
+        overlay.currentTool = .text
+        overlay.handlePointerDown(at: CGPoint(x: 40, y: 40))
+        XCTAssertTrue(overlay.debugIsEditingText)
+
+        // Leaving the editor without typing should not create an annotation.
+        overlay.debugCommitEditing()
+        XCTAssertFalse(overlay.debugIsEditingText)
+        XCTAssertEqual(overlay.debugAnnotations.count, 0)
+    }
+
     func testClickingTextReopensEditingOnExistingAnnotation() throws {
         let overlay = makeOverlay()
 
         overlay.currentTool = .text
 
         overlay.handlePointerDown(at: CGPoint(x: 30, y: 30))
-        _ = overlay.handleKeyDown(key("H"))
-        _ = overlay.handleKeyDown(key("i"))
-        _ = overlay.handleKeyDown(key("\r", keyCode: 36, modifierFlags: .shift))
+        overlay.debugEditingText = "Hi"
+        overlay.debugCommitEditing()
 
+        // Clicking the text with the Text tool active reopens it for editing,
+        // seeded with the existing contents.
         overlay.handlePointerDown(at: CGPoint(x: 34, y: 34))
-        overlay.handlePointerUp(at: CGPoint(x: 34, y: 34))
         XCTAssertTrue(overlay.debugIsEditingText)
+        XCTAssertEqual(overlay.debugEditingText, "Hi")
 
-        _ = overlay.handleKeyDown(key("!"))
-        _ = overlay.handleKeyDown(key("\r", keyCode: 36, modifierFlags: .shift))
+        overlay.debugEditingText = "Hi!"
+        overlay.debugCommitEditing()
 
         XCTAssertEqual(overlay.debugAnnotations.count, 1)
         XCTAssertEqual(overlay.debugAnnotations[0].text, "Hi!")
     }
 
-    func testReturnAddsTextLineAndShiftReturnCommits() throws {
+    func testMultiLineTextCommits() throws {
         let overlay = makeOverlay()
 
         overlay.currentTool = .text
         overlay.handlePointerDown(at: CGPoint(x: 40, y: 100))
 
-        XCTAssertTrue(overlay.handleKeyDown(key("H")))
-        XCTAssertTrue(overlay.handleKeyDown(key("i")))
-        XCTAssertTrue(overlay.handleKeyDown(key("\r", keyCode: 36)))
-        XCTAssertTrue(overlay.debugIsEditingText)
-        XCTAssertTrue(overlay.handleKeyDown(key("T")))
-        XCTAssertTrue(overlay.handleKeyDown(key("h")))
-        XCTAssertTrue(overlay.handleKeyDown(key("e")))
-        XCTAssertTrue(overlay.handleKeyDown(key("r")))
-        XCTAssertTrue(overlay.handleKeyDown(key("e")))
-        XCTAssertTrue(overlay.handleKeyDown(key("\r", keyCode: 36, modifierFlags: .shift)))
+        overlay.debugEditingText = "Hi\nThere"
+        overlay.debugCommitEditing()
 
         XCTAssertFalse(overlay.debugIsEditingText)
         XCTAssertEqual(overlay.debugAnnotations.count, 1)
@@ -118,24 +124,57 @@ final class AnnotationOverlayViewTests: XCTestCase {
 
         overlay.currentTool = .text
         overlay.handlePointerDown(at: CGPoint(x: 40, y: 100))
-        _ = overlay.handleKeyDown(key("H"))
-        _ = overlay.handleKeyDown(key("i"))
-        _ = overlay.handleKeyDown(key("\r", keyCode: 36))
-        _ = overlay.handleKeyDown(key("T"))
-        _ = overlay.handleKeyDown(key("h"))
-        _ = overlay.handleKeyDown(key("e"))
-        _ = overlay.handleKeyDown(key("r"))
-        _ = overlay.handleKeyDown(key("e"))
-        _ = overlay.handleKeyDown(key("\r", keyCode: 36, modifierFlags: .shift))
+        overlay.debugEditingText = "Hi\nThere"
+        overlay.debugCommitEditing()
 
         overlay.handlePointerDown(at: CGPoint(x: 44, y: 82))
         XCTAssertTrue(overlay.debugIsEditingText)
+        XCTAssertEqual(overlay.debugEditingText, "Hi\nThere")
 
-        _ = overlay.handleKeyDown(key("!"))
-        _ = overlay.handleKeyDown(key("\r", keyCode: 36, modifierFlags: .shift))
+        overlay.debugEditingText = "Hi\nThere!"
+        overlay.debugCommitEditing()
 
         XCTAssertEqual(overlay.debugAnnotations.count, 1)
         XCTAssertEqual(overlay.debugAnnotations[0].text, "Hi\nThere!")
+    }
+
+    func testSingleClickWithNonTextToolSelectsWithoutEditing() throws {
+        let overlay = makeOverlay()
+
+        overlay.currentTool = .text
+        overlay.handlePointerDown(at: CGPoint(x: 40, y: 100))
+        overlay.debugEditingText = "Hi"
+        overlay.debugCommitEditing()
+        XCTAssertFalse(overlay.debugIsEditingText)
+
+        // A single click with a non-text tool should select (for dragging), not edit.
+        overlay.currentTool = .box
+        overlay.handlePointerDown(at: CGPoint(x: 44, y: 100))
+        overlay.handlePointerUp(at: CGPoint(x: 44, y: 100))
+        XCTAssertFalse(overlay.debugIsEditingText)
+        XCTAssertEqual(overlay.debugAnnotations.count, 1)
+        XCTAssertEqual(overlay.debugAnnotations[0].text, "Hi")
+    }
+
+    func testDoubleClickReopensTextEditingWithNonTextTool() throws {
+        let overlay = makeOverlay()
+
+        overlay.currentTool = .text
+        overlay.handlePointerDown(at: CGPoint(x: 40, y: 100))
+        overlay.debugEditingText = "Hi"
+        overlay.debugCommitEditing()
+
+        // Double-click with a non-text tool re-enters editing on the existing text.
+        overlay.currentTool = .box
+        overlay.handlePointerDown(at: CGPoint(x: 44, y: 100), clickCount: 2)
+        XCTAssertTrue(overlay.debugIsEditingText)
+        XCTAssertEqual(overlay.debugEditingText, "Hi")
+
+        overlay.debugEditingText = "Hi!"
+        overlay.debugCommitEditing()
+
+        XCTAssertEqual(overlay.debugAnnotations.count, 1)
+        XCTAssertEqual(overlay.debugAnnotations[0].text, "Hi!")
     }
 
     func testRedoRestoresLastUndoneAnnotation() throws {
@@ -186,21 +225,6 @@ final class AnnotationOverlayViewTests: XCTestCase {
 
     private func makeOverlay() -> AnnotationOverlayView {
         AnnotationOverlayView(frame: NSRect(x: 0, y: 0, width: 240, height: 180))
-    }
-
-    private func key(_ characters: String, keyCode: UInt16 = 0, modifierFlags: NSEvent.ModifierFlags = []) -> NSEvent {
-        NSEvent.keyEvent(
-            with: .keyDown,
-            location: .zero,
-            modifierFlags: modifierFlags,
-            timestamp: ProcessInfo.processInfo.systemUptime,
-            windowNumber: 0,
-            context: nil,
-            characters: characters,
-            charactersIgnoringModifiers: characters,
-            isARepeat: false,
-            keyCode: keyCode
-        )!
     }
 
     private func assertPoint(_ point: CGPoint, x: CGFloat, y: CGFloat, file: StaticString = #filePath, line: UInt = #line) {
