@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import ImageIO
+import UniformTypeIdentifiers
 
 @MainActor
 public final class PopoverViewModel: ObservableObject {
@@ -165,6 +166,56 @@ public final class PopoverViewModel: ObservableObject {
 
     public func dragURL(for entry: CaptureEntry) -> URL {
         store.dragURL(for: entry)
+    }
+
+    /// Builds the drag payload for a capture and signals `onDragStarted` so any
+    /// presenting surface (popover or drop-down strip) can stay open for the
+    /// duration of the drag. Registers the file URL, image data and a plain-text
+    /// path so the capture drops into Finder, editors, browsers and terminals.
+    public func makeDragProvider(for entry: CaptureEntry) -> NSItemProvider {
+        onDragStarted?()
+
+        let url = dragURL(for: entry)
+        let provider = NSItemProvider()
+        provider.suggestedName = url.lastPathComponent
+
+        let imageType = UTType(filenameExtension: url.pathExtension) ?? .png
+
+        provider.registerObject(url as NSURL, visibility: .all)
+        provider.registerDataRepresentation(forTypeIdentifier: UTType.fileURL.identifier, visibility: .all) { completion in
+            completion(url.absoluteString.data(using: .utf8), nil)
+            return nil
+        }
+        provider.registerDataRepresentation(forTypeIdentifier: UTType.url.identifier, visibility: .all) { completion in
+            completion(url.absoluteString.data(using: .utf8), nil)
+            return nil
+        }
+        provider.registerDataRepresentation(forTypeIdentifier: imageType.identifier, visibility: .all) { completion in
+            do {
+                completion(try Data(contentsOf: url), nil)
+            } catch {
+                completion(nil, error)
+            }
+            return nil
+        }
+        provider.registerDataRepresentation(forTypeIdentifier: UTType.image.identifier, visibility: .all) { completion in
+            do {
+                completion(try Data(contentsOf: url), nil)
+            } catch {
+                completion(nil, error)
+            }
+            return nil
+        }
+        provider.registerFileRepresentation(forTypeIdentifier: imageType.identifier, fileOptions: [], visibility: .all) { completion in
+            completion(url, false, nil)
+            return nil
+        }
+        provider.registerDataRepresentation(forTypeIdentifier: UTType.utf8PlainText.identifier, visibility: .all) { completion in
+            completion(url.path.data(using: .utf8), nil)
+            return nil
+        }
+
+        return provider
     }
 
     public func showQuickView(for entry: CaptureEntry) {

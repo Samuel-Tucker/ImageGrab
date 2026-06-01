@@ -18,6 +18,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
     private var reopenPopoverAfterQuickView = false
     private var lastCaptureRegion: CaptureRegion?
 
+    private var hotCornerMonitor: HotCornerMonitor?
+    private var captureStripWindow: CaptureStripWindow?
+    private var stripEscGlobalMonitor: Any?
+    private var stripEscLocalMonitor: Any?
+    private var stripDragKeepAliveUntil: Date?
+
     public override init() {
         super.init()
     }
@@ -59,12 +65,15 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
     public func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
         setupPopover()
+        setupHotCornerStrip()
         registerHotKey()
     }
 
     public func applicationWillTerminate(_ notification: Notification) {
         removePopoverKeyDownMonitor()
         removeRegionHotKeyFallbackMonitor()
+        removeStripEscMonitors()
+        hotCornerMonitor?.stop()
         regionHotKeyEventTap?.stop()
         hotKeyManager?.unregisterAll()
     }
@@ -97,9 +106,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         )
         popover = p
 
-        // Keep popover open during drag sessions so cross-app drops work
+        // Keep popover/strip open during drag sessions so cross-app drops work
         vm.onDragStarted = { [weak self] in
             self?.popover?.behavior = .applicationDefined
+            self?.stripDragKeepAliveUntil = Date().addingTimeInterval(10)
             DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) {
                 self?.popover?.behavior = .transient
             }
@@ -181,6 +191,75 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         guard let monitor = popoverKeyDownMonitor else { return }
         NSEvent.removeMonitor(monitor)
         popoverKeyDownMonitor = nil
+    }
+
+    // MARK: - Hot-corner drop-down strip
+
+    private func setupHotCornerStrip() {
+        guard let viewModel else { return }
+
+        let strip = CaptureStripWindow(viewModel: viewModel) { [weak self] in
+            self?.hideStrip()
+        }
+        strip.isDragging = { [weak self] in
+            guard let until = self?.stripDragKeepAliveUntil else { return false }
+            return Date() < until
+        }
+        strip.onAutoHide = { [weak self] in
+            self?.hideStrip()
+        }
+        captureStripWindow = strip
+
+        let monitor = HotCornerMonitor(corner: .topLeft)
+        monitor.isEnabled = { [weak self] in
+            guard let self else { return false }
+            return !(self.captureStripWindow?.isPresented ?? false) && !self.isCaptureInProgress
+        }
+        monitor.onTrigger = { [weak self] screen in
+            self?.showStrip(on: screen)
+        }
+        monitor.start()
+        hotCornerMonitor = monitor
+    }
+
+    private func showStrip(on screen: NSScreen) {
+        guard let strip = captureStripWindow, !strip.isPresented else { return }
+        viewModel?.refresh()
+        installStripEscMonitors()
+        strip.present(on: screen)
+    }
+
+    private func hideStrip() {
+        guard let strip = captureStripWindow, strip.isPresented else { return }
+        strip.dismiss()
+        removeStripEscMonitors()
+    }
+
+    private func installStripEscMonitors() {
+        if stripEscGlobalMonitor == nil {
+            stripEscGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard event.keyCode == 53 else { return }
+                Task { @MainActor in self?.hideStrip() }
+            }
+        }
+        if stripEscLocalMonitor == nil {
+            stripEscLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard event.keyCode == 53 else { return event }
+                Task { @MainActor in self?.hideStrip() }
+                return nil
+            }
+        }
+    }
+
+    private func removeStripEscMonitors() {
+        if let monitor = stripEscGlobalMonitor {
+            NSEvent.removeMonitor(monitor)
+            stripEscGlobalMonitor = nil
+        }
+        if let monitor = stripEscLocalMonitor {
+            NSEvent.removeMonitor(monitor)
+            stripEscLocalMonitor = nil
+        }
     }
 
     private func registerHotKey() {
@@ -300,8 +379,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         guard !isCaptureInProgress else { return }
         isCaptureInProgress = true
 
-        // Close popover if open
+        // Close popover and the drop-down strip if open
         closePopover()
+        hideStrip()
         viewModel?.updateCaptureStatus("Capture: requested \(mode.statusLabel)")
 
         switch mode {
