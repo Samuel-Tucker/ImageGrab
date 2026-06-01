@@ -29,6 +29,9 @@ final class CapturePreviewWindow: NSWindow {
     private let onCancel: @MainActor () -> Void
     private let capturedImage: NSImage
     private var annotationOverlay: AnnotationOverlayView!
+    private var spriteLayer: SpriteLayerView!
+    private var rearrangeBtn: PreviewActionButton!
+    private var rearrangeActive = false
     private var undoBtn: NSButton!
     private var redoBtn: NSButton!
     private var textBackgroundColorWell: NSColorWell!
@@ -101,12 +104,17 @@ final class CapturePreviewWindow: NSWindow {
         imageView.layer?.borderWidth = 3
         container.addSubview(imageView)
 
-        // Annotation overlay (on top of image, same frame)
+        // Sprite layer (between image and annotations): lifts regions of the
+        // screenshot into draggable pieces. Display-only until rearrange mode is on.
+        let sprites = SpriteLayerView(frame: NSRect(x: imageX, y: bottomBarH, width: displayW, height: displayH))
+        sprites.setSource(image)
+        sprites.onSpritesChanged = { [weak self] in self?.updateUndoRedoButtons() }
+        spriteLayer = sprites
+        container.addSubview(sprites)
+
+        // Annotation overlay (on top of image + sprites, same frame)
         let overlay = AnnotationOverlayView(frame: NSRect(x: imageX, y: bottomBarH, width: displayW, height: displayH))
-        overlay.onAnnotationsChanged = { [weak self, weak overlay] in
-            self?.undoBtn.isEnabled = overlay?.canUndo ?? false
-            self?.redoBtn.isEnabled = overlay?.canRedo ?? false
-        }
+        overlay.onAnnotationsChanged = { [weak self] in self?.updateUndoRedoButtons() }
         annotationOverlay = overlay
         container.addSubview(overlay)
 
@@ -228,6 +236,20 @@ final class CapturePreviewWindow: NSWindow {
         bar.addSubview(redo)
 
         let copyTextW: CGFloat = 116
+        let rearrangeW: CGFloat = 110
+        let rearrange = styledPreviewButton(
+            title: "Rearrange",
+            frame: NSRect(x: bar.frame.width - copyTextW - 12 - 8 - rearrangeW, y: 6, width: rearrangeW, height: 28),
+            backgroundColor: .controlBackgroundColor,
+            highlightedColor: .selectedControlColor,
+            textColor: .labelColor,
+            action: #selector(toggleRearrange),
+            borderColor: NSColor.separatorColor
+        )
+        rearrange.toolTip = "Lift parts of the screenshot and drag them to mock up changes"
+        rearrangeBtn = rearrange as? PreviewActionButton
+        bar.addSubview(rearrange)
+
         let copyTextBtn = styledPreviewButton(
             title: "Copy Text",
             frame: NSRect(x: bar.frame.width - copyTextW - 12, y: 6, width: copyTextW, height: 28),
@@ -363,18 +385,21 @@ final class CapturePreviewWindow: NSWindow {
             return
         }
 
-        // Text editing gets first crack at key events
-        if annotationOverlay.handleKeyDown(event) {
+        // The active layer gets first crack at key events (text editing / sprite
+        // selection-delete).
+        if rearrangeActive {
+            if spriteLayer.handleKeyDown(event) { return }
+        } else if annotationOverlay.handleKeyDown(event) {
             return
         }
         if event.modifierFlags.contains(.command),
            event.modifierFlags.contains(.shift),
            event.charactersIgnoringModifiers == "z" {
-            annotationOverlay.redo()
+            redoClicked()
             return
         }
         if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "z" {
-            annotationOverlay.undo()
+            undoClicked()
             return
         }
         // Escape closes the window (when not editing text)
@@ -415,12 +440,33 @@ final class CapturePreviewWindow: NSWindow {
         annotationOverlay.currentTextBackgroundColor = sender.color
     }
 
+    @objc private func toggleRearrange() {
+        annotationOverlay.commitTextIfNeeded()
+        rearrangeActive.toggle()
+        spriteLayer.isActive = rearrangeActive
+        annotationOverlay.interactionEnabled = !rearrangeActive
+
+        let activeColor = NSColor.controlAccentColor
+        rearrangeBtn.normalBackgroundColor = rearrangeActive ? activeColor : .controlBackgroundColor
+        rearrangeBtn.highlightedBackgroundColor = rearrangeActive
+            ? activeColor.withAlphaComponent(0.85) : .selectedControlColor
+        setPreviewButtonTitle(rearrangeBtn, "Rearrange", textColor: rearrangeActive ? .white : .labelColor)
+
+        makeFirstResponder(rearrangeActive ? spriteLayer : annotationOverlay)
+        updateUndoRedoButtons()
+    }
+
     @objc private func undoClicked() {
-        annotationOverlay.undo()
+        if rearrangeActive { spriteLayer.undo() } else { annotationOverlay.undo() }
     }
 
     @objc private func redoClicked() {
-        annotationOverlay.redo()
+        if rearrangeActive { spriteLayer.redo() } else { annotationOverlay.redo() }
+    }
+
+    private func updateUndoRedoButtons() {
+        undoBtn.isEnabled = rearrangeActive ? spriteLayer.canUndo : annotationOverlay.canUndo
+        redoBtn.isEnabled = rearrangeActive ? spriteLayer.canRedo : annotationOverlay.canRedo
     }
 
     @objc private func copyTextClicked() {
@@ -456,7 +502,9 @@ final class CapturePreviewWindow: NSWindow {
 
     private func finalImage() -> NSImage {
         annotationOverlay.commitTextIfNeeded()
-        return annotationOverlay.compositeOnto(image: capturedImage)
+        // Bake the moved sprites into the image first, then draw annotations on top.
+        let plate = spriteLayer.compositeOnto(image: capturedImage)
+        return annotationOverlay.compositeOnto(image: plate)
     }
 
     private func requestedBaseName() -> String? {

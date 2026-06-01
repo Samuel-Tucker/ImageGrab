@@ -8,6 +8,19 @@ CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 CONFIGURATION="${CONFIGURATION:-release}"
 SIGN_IDENTITY="${SIGN_IDENTITY:-ImageGrab Dev}"
+# Keep a STABLE code identity across rebuilds. Ad-hoc re-signing changes the app's
+# identity every build, which silently revokes TCC grants (Screen Recording, etc.).
+# If the requested identity isn't in the keychain, fall back to the first real
+# codesigning identity rather than ad-hoc, so permissions persist between builds.
+if [[ "$SIGN_IDENTITY" != "none" ]] \
+   && ! security find-identity -v -p codesigning 2>/dev/null | grep -qF "$SIGN_IDENTITY"; then
+  AUTO_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
+    | sed -n 's/.*) \([0-9A-F]\{40\}\) .*/\1/p' | head -1)"
+  if [[ -n "$AUTO_IDENTITY" ]]; then
+    echo "Signing identity '$SIGN_IDENTITY' not in keychain; using detected identity $AUTO_IDENTITY"
+    SIGN_IDENTITY="$AUTO_IDENTITY"
+  fi
+fi
 ENABLE_HARDENED_RUNTIME="${ENABLE_HARDENED_RUNTIME:-0}"
 REGISTER_APP="${REGISTER_APP:-1}"
 BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER:-com.samueltucker.imagegrab}"

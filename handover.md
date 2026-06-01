@@ -28,6 +28,20 @@ Recent shipped/local features:
 - `Opt+G` is restored to the proven native macOS region picker path.
 - `Opt+Cmd+G` remains full-screen capture.
 
+## Code Signing / Screen Recording Permission (2026-06-01)
+
+`./Scripts/build_app.sh` re-signs on every build. When it fell back to an **ad-hoc**
+signature, the app's code identity changed each rebuild and macOS silently revoked its
+Screen Recording grant — capture showed the region crosshairs but produced no image
+(`could not create image from rect` in the log), no preview window, nothing saved. This
+masquerades as an app bug.
+
+Fix: `build_app.sh` now auto-detects a real codesigning identity (Apple Development,
+Team `WAA9GY9XKP`) instead of ad-hoc, keeping a stable identity so the permission
+persists across rebuilds. If capture silently breaks after a rebuild, check
+`codesign -dvv ~/Applications/ImageGrab.app` is not `adhoc`, then re-grant Screen
+Recording. See `CLAUDE.md` for the full runbook. Do not iterate with ad-hoc signing.
+
 ## Critical Regression Note
 
 An attempted "Last-Region Recapture" implementation replaced `Opt+G` with a custom `CaptureRegionSelector`. The user reported `Opt+G` stopped working.

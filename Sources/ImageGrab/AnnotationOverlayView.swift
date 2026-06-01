@@ -80,6 +80,12 @@ final class AnnotationOverlayView: NSView {
     }
     var onAnnotationsChanged: (@MainActor () -> Void)?
 
+    /// When false the overlay ignores all pointer events (hit-testing falls through
+    /// to the view below). Used to hand clicks to the sprite layer in rearrange mode.
+    var interactionEnabled = true {
+        didSet { window?.invalidateCursorRects(for: self) }
+    }
+
     private var annotations: [Annotation] = []
     private var redoStack: [Annotation] = []
     private var currentAnnotation: Annotation?
@@ -116,7 +122,12 @@ final class AnnotationOverlayView: NSView {
     var canUndo: Bool { !annotations.isEmpty }
     var canRedo: Bool { !redoStack.isEmpty }
 
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        interactionEnabled ? super.hitTest(point) : nil
+    }
+
     override func resetCursorRects() {
+        guard interactionEnabled else { return }
         addCursorRect(bounds, cursor: currentTool == .text ? .iBeam : .crosshair)
 
         // Committed text annotations stay editable, so show an I-beam when hovering
