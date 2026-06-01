@@ -92,9 +92,10 @@ final class AnnotationOverlayViewTests: XCTestCase {
         overlay.debugEditingText = "Hi"
         overlay.debugCommitEditing()
 
-        // Clicking the text with the Text tool active reopens it for editing,
-        // seeded with the existing contents.
+        // A click (press + release with no drag) on the text with the Text tool
+        // active reopens it for editing, seeded with the existing contents.
         overlay.handlePointerDown(at: CGPoint(x: 34, y: 34))
+        overlay.handlePointerUp(at: CGPoint(x: 34, y: 34))
         XCTAssertTrue(overlay.debugIsEditingText)
         XCTAssertEqual(overlay.debugEditingText, "Hi")
 
@@ -127,7 +128,9 @@ final class AnnotationOverlayViewTests: XCTestCase {
         overlay.debugEditingText = "Hi\nThere"
         overlay.debugCommitEditing()
 
+        // A single click (press + release without dragging) reopens the editor.
         overlay.handlePointerDown(at: CGPoint(x: 44, y: 82))
+        overlay.handlePointerUp(at: CGPoint(x: 44, y: 82))
         XCTAssertTrue(overlay.debugIsEditingText)
         XCTAssertEqual(overlay.debugEditingText, "Hi\nThere")
 
@@ -175,6 +178,55 @@ final class AnnotationOverlayViewTests: XCTestCase {
 
         XCTAssertEqual(overlay.debugAnnotations.count, 1)
         XCTAssertEqual(overlay.debugAnnotations[0].text, "Hi!")
+    }
+
+    func testDraggingTextWithTextToolMovesItInsteadOfEditing() throws {
+        let overlay = makeOverlay()
+
+        overlay.currentTool = .text
+        overlay.handlePointerDown(at: CGPoint(x: 40, y: 100))
+        overlay.debugEditingText = "Hi"
+        overlay.debugCommitEditing()
+        XCTAssertFalse(overlay.debugIsEditingText)
+
+        // With the Text tool still active, pressing on the text and dragging must
+        // reposition it (not re-open the editor). Regression: the Text tool used to
+        // re-enter editing on mouse-down, so the text could never be dragged.
+        overlay.handlePointerDown(at: CGPoint(x: 44, y: 100))
+        overlay.handlePointerDragged(to: CGPoint(x: 84, y: 140))
+        overlay.handlePointerUp(at: CGPoint(x: 84, y: 140))
+
+        XCTAssertFalse(overlay.debugIsEditingText)
+        XCTAssertEqual(overlay.debugAnnotations.count, 1)
+        XCTAssertEqual(overlay.debugAnnotations[0].text, "Hi")
+        assertPoint(overlay.debugAnnotations[0].points[0], x: 80, y: 140)
+    }
+
+    func testTextToolClickInsideBoxStartsNewTextOverBox() throws {
+        let overlay = makeOverlay()
+
+        // Lay a box down over the image.
+        overlay.currentTool = .box
+        overlay.handlePointerDown(at: CGPoint(x: 20, y: 20))
+        overlay.handlePointerDragged(to: CGPoint(x: 120, y: 120))
+        overlay.handlePointerUp(at: CGPoint(x: 120, y: 120))
+        XCTAssertEqual(overlay.debugAnnotations.count, 1)
+
+        // Clicking inside the box with the Text tool must start a NEW text
+        // annotation on top of it. Regression: the box's filled interior captured
+        // the click and selected the box instead of placing text.
+        overlay.currentTool = .text
+        overlay.handlePointerDown(at: CGPoint(x: 60, y: 60))
+        XCTAssertTrue(overlay.debugIsEditingText)
+
+        overlay.debugEditingText = "Label"
+        overlay.debugCommitEditing()
+
+        XCTAssertEqual(overlay.debugAnnotations.count, 2)
+        XCTAssertEqual(overlay.debugAnnotations[0].tool, .box)
+        XCTAssertEqual(overlay.debugAnnotations[1].tool, .text)
+        XCTAssertEqual(overlay.debugAnnotations[1].text, "Label")
+        assertPoint(overlay.debugAnnotations[1].points[0], x: 60, y: 60)
     }
 
     func testRedoRestoresLastUndoneAnnotation() throws {

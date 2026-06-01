@@ -87,6 +87,9 @@ final class AnnotationOverlayView: NSView {
     private var movingAnnotationIndex: Int?
     private var lastDragPoint: CGPoint?
     private var didMoveSelection = false
+    /// Set on mouse-down over a text annotation that should re-open for editing if
+    /// the gesture turns out to be a click rather than a drag. Resolved on mouse-up.
+    private var pendingTextEditOnUpIndex: Int?
     private let baseLineWidth: CGFloat = 3.0
     private let arrowLineWidth: CGFloat = 2.5
 
@@ -261,20 +264,26 @@ final class AnnotationOverlayView: NSView {
     func handlePointerDown(at point: CGPoint, clickCount: Int = 1) {
         commitTextIfNeeded()
 
-        if let hitIndex = hitTestAnnotation(at: point) {
-            // Re-enter text editing on a double-click (any tool) or on a single
-            // click while the Text tool is active. A single click with another
-            // tool only selects, so the text can be dragged without editing it.
-            if annotations[hitIndex].tool == .text, clickCount >= 2 || currentTool == .text {
+        // With the Text tool active, only text annotations are interactive, so a
+        // click inside a box (or any other shape) starts a new text annotation on
+        // top of it rather than grabbing the shape underneath.
+        if let hitIndex = hitTestAnnotation(at: point, textOnly: currentTool == .text) {
+            // A double-click (never a drag) re-enters editing immediately.
+            if annotations[hitIndex].tool == .text, clickCount >= 2 {
                 beginEditingTextAnnotation(at: hitIndex)
                 return
             }
 
+            // Otherwise arm a potential move. Whether this becomes an edit or a
+            // drag is decided on mouse-up: a click that didn't move re-opens the
+            // editor (Text tool only); any drag repositions the annotation.
             currentAnnotation = nil
             selectedAnnotationIndex = hitIndex
             movingAnnotationIndex = hitIndex
             lastDragPoint = point
             didMoveSelection = false
+            pendingTextEditOnUpIndex =
+                (annotations[hitIndex].tool == .text && currentTool == .text) ? hitIndex : nil
             needsDisplay = true
             return
         }
@@ -339,10 +348,19 @@ final class AnnotationOverlayView: NSView {
     func handlePointerUp(at point: CGPoint) {
         _ = point
         if movingAnnotationIndex != nil {
+            let moved = didMoveSelection
+            let editIndex = pendingTextEditOnUpIndex
             movingAnnotationIndex = nil
             lastDragPoint = nil
             didMoveSelection = false
-            needsDisplay = true
+            pendingTextEditOnUpIndex = nil
+            // A click that didn't drag re-opens the text editor; a drag just moved it.
+            if !moved, let editIndex, annotations.indices.contains(editIndex),
+               annotations[editIndex].tool == .text {
+                beginEditingTextAnnotation(at: editIndex)
+            } else {
+                needsDisplay = true
+            }
             return
         }
 
@@ -714,8 +732,9 @@ final class AnnotationOverlayView: NSView {
 
     // MARK: - Hit testing
 
-    private func hitTestAnnotation(at point: CGPoint) -> Int? {
+    private func hitTestAnnotation(at point: CGPoint, textOnly: Bool = false) -> Int? {
         for index in annotations.indices.reversed() {
+            if textOnly, annotations[index].tool != .text { continue }
             if annotation(annotations[index], contains: point) {
                 return index
             }
