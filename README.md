@@ -122,7 +122,7 @@ gathers ImageGrab-specific file context, and checks returned patches with
 2. For region captures, select a screen region with the native macOS crosshair.
 3. If you need a menu, tooltip, or hover state, choose a `3s`, `5s`, or `10s` delay from the popover first.
 4. Annotate in the preview window if needed, or click `Copy Text` to extract OCR text from the capture.
-5. Click `Save` or `Save & Copy Path`.
+5. Click `Save` or `Save & Copy Image`.
 6. Use the menu bar popover to preview, copy paths, copy text, rename, edit, delete, or drag captures into other apps.
 
 Captures are stored in `~/Library/Application Support/ImageGrab/Captures/` for fresh installs. Existing local development installs that already have `~/repos/ImageGrab/captures/` keep using that legacy folder.
@@ -137,7 +137,7 @@ Captures are stored in `~/Library/Application Support/ImageGrab/Captures/` for f
 | `Cmd+Z` | Undo the last committed annotation |
 | `Cmd+Shift+Z` | Redo the last undone annotation |
 | `Esc` | Cancel capture, clear selection, or finish text editing |
-| `Return` | Save & Copy Path from the preview window |
+| `Return` | Save & Copy Image from the preview window |
 | `Cmd+=` / `Cmd+-` | Increase or decrease selected text size |
 | `Scroll wheel` | Adjust text size while using or editing the text tool |
 

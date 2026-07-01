@@ -264,7 +264,7 @@ public final class PopoverViewModel: ObservableObject {
         let preview = CapturePreviewWindow(
             image: image,
             initialBaseName: baseName,
-            onSave: { [weak self] editedImage, copyPath, requestedBaseName in
+            onSave: { [weak self] editedImage, copyImage, requestedBaseName in
                 guard let self else { return }
 
                 let proposed = requestedBaseName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -281,9 +281,13 @@ public final class PopoverViewModel: ObservableObject {
                     return
                 }
 
-                if copyPath, let updatedEntry = self.store.entries.first(where: { $0.id == entry.id }) {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(self.store.path(for: updatedEntry), forType: .string)
+                if copyImage, let updatedEntry = self.store.entries.first(where: { $0.id == entry.id }) {
+                    let path = self.store.path(for: updatedEntry)
+                    guard CapturePasteboardWriter.copyImage(editedImage, savedPath: path) else {
+                        NSSound.beep()
+                        self.currentEditWindow = nil
+                        return
+                    }
                 }
 
                 self.refresh()

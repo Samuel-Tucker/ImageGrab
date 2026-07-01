@@ -318,12 +318,12 @@ final class CapturePreviewWindow: NSWindow {
         bar.addSubview(saveBtn)
 
         let saveCopyBtn = styledPreviewButton(
-            title: "Save & Copy Path",
+            title: "Save & Copy Image",
             frame: NSRect(x: saveCopyX, y: 10, width: saveCopyW, height: 30),
             backgroundColor: NSColor.systemBlue.withAlphaComponent(0.16),
             highlightedColor: NSColor.systemBlue.withAlphaComponent(0.26),
             textColor: .labelColor,
-            action: #selector(saveAndCopyPathClicked),
+            action: #selector(saveAndCopyImageClicked),
             borderColor: NSColor.systemBlue.withAlphaComponent(0.45)
         )
         saveCopyBtn.keyEquivalent = "\r"
@@ -520,7 +520,7 @@ final class CapturePreviewWindow: NSWindow {
         onSave(finalImage(), false, requestedBaseName())
     }
 
-    @objc private func saveAndCopyPathClicked() {
+    @objc private func saveAndCopyImageClicked() {
         orderOut(nil)
         onSave(finalImage(), true, requestedBaseName())
     }

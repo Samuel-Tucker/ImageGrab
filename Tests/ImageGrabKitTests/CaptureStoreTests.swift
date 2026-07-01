@@ -178,6 +178,18 @@ final class CaptureStoreTests: XCTestCase {
         XCTAssertNotEqual(originalSize, updatedSize)
     }
 
+    func testCapturePasteboardWriterCopiesImageAndSavedPath() throws {
+        let pasteboard = try XCTUnwrap(NSPasteboard(name: NSPasteboard.Name(rawValue: "CapturePasteboardWriterTests-image")))
+        let path = "/tmp/ImageGrabTests/copied.png"
+
+        XCTAssertTrue(CapturePasteboardWriter.copyImage(makeImage(), savedPath: path, to: pasteboard))
+
+        let item = try XCTUnwrap(pasteboard.pasteboardItems?.first)
+        XCTAssertNotNil(item.data(forType: .png))
+        XCTAssertEqual(item.string(forType: .string), path)
+        XCTAssertEqual(item.string(forType: .fileURL), URL(fileURLWithPath: path).absoluteString)
+    }
+
     func testClearAllRemovesTrackedFiles() throws {
         let capturesDirectory = try makeCapturesDirectory()
         defer { try? FileManager.default.removeItem(at: capturesDirectory) }

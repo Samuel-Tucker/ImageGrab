@@ -513,8 +513,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
 
         let preview = CapturePreviewWindow(
             image: image,
-            onSave: { [weak self] img, copyPath, baseName in
-                self?.handleCapturedImage(img, copyPath: copyPath, baseName: baseName)
+            onSave: { [weak self] img, copyImage, baseName in
+                self?.handleCapturedImage(img, copyImage: copyImage, baseName: baseName)
                 self?.previewWindow = nil
             },
             onCancel: { [weak self] in
@@ -525,16 +525,19 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         preview.show()
     }
 
-    private func handleCapturedImage(_ image: NSImage, copyPath: Bool = false, baseName: String? = nil) {
+    private func handleCapturedImage(_ image: NSImage, copyImage: Bool = false, baseName: String? = nil) {
         guard let entry = captureStore.addCapture(image: image, preferredBaseName: baseName) else {
             NSSound.beep()
             return
         }
 
-        if copyPath {
+        if copyImage {
             let path = captureStore.path(for: entry)
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(path, forType: .string)
+            guard CapturePasteboardWriter.copyImage(image, savedPath: path) else {
+                NSSound.beep()
+                viewModel?.updateCaptureStatus("Capture: saved, copy failed")
+                return
+            }
         }
 
         viewModel?.refresh()
