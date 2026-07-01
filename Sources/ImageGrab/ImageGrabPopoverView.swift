@@ -9,6 +9,8 @@ struct ImageGrabPopoverView: View {
     @State private var noTextID: UUID?
     @State private var recognizingTextID: UUID?
     @State private var showClearAllConfirm = false
+    @State private var selectedIDs: Set<UUID> = []
+    @State private var copiedSelection = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -27,6 +29,21 @@ struct ImageGrabPopoverView: View {
                 Text("\(viewModel.entries.count) captures")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Button {
+                    viewModel.togglePopoverPinned()
+                } label: {
+                    Image(systemName: viewModel.isPopoverPinned ? "pin.fill" : "pin")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(viewModel.isPopoverPinned ? Color.accentColor : .secondary)
+                        .frame(width: 22, height: 22)
+                        .background(
+                            RoundedRectangle(cornerRadius: 5)
+                                .fill(viewModel.isPopoverPinned ? Color.accentColor.opacity(0.15) : Color.clear)
+                        )
+                }
+                .buttonStyle(.plain)
+                .contentShape(RoundedRectangle(cornerRadius: 5))
+                .help(viewModel.isPopoverPinned ? "Sticky on: ImageGrab stays open until you close it" : "Keep ImageGrab open while dragging multiple captures")
                 Button {
                     onClose()
                 } label: {
@@ -67,6 +84,52 @@ struct ImageGrabPopoverView: View {
                     }
                     .padding(8)
                 }
+            }
+
+            if !selectedIDs.isEmpty {
+                Divider()
+
+                HStack(spacing: 8) {
+                    Text("\(selectedIDs.count) selected")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    Button {
+                        selectedIDs.removeAll()
+                        copiedSelection = false
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 24, height: 24)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(Color.secondary.opacity(0.12))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .help("Clear selection")
+
+                    Button {
+                        copySelectedCaptures()
+                    } label: {
+                        Label(copiedSelection ? "Copied" : "Copy All", systemImage: copiedSelection ? "checkmark" : "doc.on.clipboard")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10)
+                            .frame(height: 24)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(copiedSelection ? Color.green.opacity(0.82) : Color.accentColor.opacity(0.82))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .help("Copy selected captures so they can be pasted")
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
             }
 
             Divider()
@@ -166,6 +229,12 @@ struct ImageGrabPopoverView: View {
             .padding(.vertical, 6)
         }
         .frame(width: 300, height: 400)
+        .onChange(of: viewModel.entries.map(\.id)) { ids in
+            selectedIDs.formIntersection(Set(ids))
+            if selectedIDs.isEmpty {
+                copiedSelection = false
+            }
+        }
     }
 
     @ViewBuilder
@@ -177,13 +246,37 @@ struct ImageGrabPopoverView: View {
             isTextCopied: copiedTextID == entry.id,
             isNoText: noTextID == entry.id,
             isRecognizingText: recognizingTextID == entry.id,
+            isSelected: selectedIDs.contains(entry.id),
             onCopy: { copyPath(for: entry) },
             onCopyText: { copyText(for: entry) },
             onQuickView: { viewModel.showQuickView(for: entry) },
             onEdit: { viewModel.editAnnotations(for: entry) },
-            onDelete: { viewModel.delete(id: entry.id) },
+            onToggleSelected: { toggleSelection(for: entry) },
+            onDelete: {
+                selectedIDs.remove(entry.id)
+                viewModel.delete(id: entry.id)
+            },
             onRename: { newName in viewModel.rename(id: entry.id, to: newName) }
         )
+    }
+
+    private func toggleSelection(for entry: CaptureEntry) {
+        if selectedIDs.contains(entry.id) {
+            selectedIDs.remove(entry.id)
+        } else {
+            selectedIDs.insert(entry.id)
+        }
+        copiedSelection = false
+    }
+
+    private func copySelectedCaptures() {
+        let selectedEntries = viewModel.entries.filter { selectedIDs.contains($0.id) }
+        guard viewModel.copyImages(for: selectedEntries) else { return }
+
+        copiedSelection = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            copiedSelection = false
+        }
     }
 
     private func copyPath(for entry: CaptureEntry) {
@@ -227,10 +320,12 @@ private struct CaptureCell: View {
     let isTextCopied: Bool
     let isNoText: Bool
     let isRecognizingText: Bool
+    let isSelected: Bool
     let onCopy: () -> Void
     let onCopyText: () -> Void
     let onQuickView: () -> Void
     let onEdit: () -> Void
+    let onToggleSelected: () -> Void
     let onDelete: () -> Void
     let onRename: (String) -> Bool
 
@@ -267,7 +362,7 @@ private struct CaptureCell: View {
                 .clipShape(RoundedRectangle(cornerRadius: 6))
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
-                        .stroke(isCopied ? Color.green : Color.clear, lineWidth: 2)
+                        .stroke(thumbnailBorderColor, lineWidth: thumbnailBorderWidth)
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 6))
                 .onDrag {
@@ -324,10 +419,23 @@ private struct CaptureCell: View {
                             } message: {
                                 Text("This action cannot be undone.")
                             }
+
+                            selectionButton
                         }
                         .opacity(isCellHovered ? 1 : 0)
                         .allowsHitTesting(isCellHovered)
                         .animation(.easeOut(duration: 0.12), value: isCellHovered)
+                    }
+                    .padding(4)
+
+                    Spacer()
+                }
+
+                VStack {
+                    HStack {
+                        Spacer()
+                        selectionButton
+                            .opacity(isCellHovered ? 0 : 1)
                     }
                     .padding(4)
 
@@ -476,6 +584,11 @@ private struct CaptureCell: View {
             } label: {
                 Label("Rename", systemImage: "pencil")
             }
+            Button {
+                onToggleSelected()
+            } label: {
+                Label(isSelected ? "Deselect" : "Select", systemImage: isSelected ? "checkmark.square.fill" : "square")
+            }
             Divider()
             Button(role: .destructive) {
                 onDelete()
@@ -513,6 +626,36 @@ private struct CaptureCell: View {
         .buttonStyle(.plain)
         .contentShape(RoundedRectangle(cornerRadius: 6))
         .help(help)
+    }
+
+    private var selectionButton: some View {
+        Button(action: onToggleSelected) {
+            Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(isSelected ? Color.accentColor : Color.white)
+                .frame(width: 22, height: 22)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.black.opacity(isSelected ? 0.78 : 0.56))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.white.opacity(isSelected ? 0.34 : 0.18), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .contentShape(RoundedRectangle(cornerRadius: 6))
+        .help(isSelected ? "Deselect capture" : "Select capture for Copy All")
+    }
+
+    private var thumbnailBorderColor: Color {
+        if isCopied { return Color.green }
+        if isSelected { return Color.accentColor }
+        return Color.clear
+    }
+
+    private var thumbnailBorderWidth: CGFloat {
+        isCopied || isSelected ? 2 : 0
     }
 
     private var copyButtonBackground: Color {

@@ -107,12 +107,17 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         popover = p
 
         // Keep popover/strip open during drag sessions so cross-app drops work
-        vm.onDragStarted = { [weak self] in
+        vm.onDragStarted = { [weak self, weak vm] in
             self?.popover?.behavior = .applicationDefined
             self?.stripDragKeepAliveUntil = Date().addingTimeInterval(10)
             DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) {
+                guard vm?.isPopoverPinned != true else { return }
                 self?.popover?.behavior = .transient
             }
+        }
+
+        vm.onPopoverPinnedChanged = { [weak self] pinned in
+            self?.popover?.behavior = pinned ? .applicationDefined : .transient
         }
 
         vm.onCaptureRegion = { [weak self] in
@@ -210,7 +215,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         }
         captureStripWindow = strip
 
-        let monitor = HotCornerMonitor(corner: .topLeft)
+        let monitor = HotCornerMonitor(corner: .topRight)
         monitor.isEnabled = { [weak self] in
             guard let self else { return false }
             return !(self.captureStripWindow?.isPresented ?? false) && !self.isCaptureInProgress

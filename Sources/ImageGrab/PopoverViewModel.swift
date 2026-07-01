@@ -12,6 +12,7 @@ public final class PopoverViewModel: ObservableObject {
     @Published public var regionTapStatus = "Fn+G tap: starting"
     @Published public var permissionStatus = "Permissions: checking"
     @Published public var captureStatus = "Capture: idle"
+    @Published public var isPopoverPinned = false
 
     public var canRepeatLastRegion: Bool {
         lastCaptureRegion?.isUsable == true
@@ -19,6 +20,7 @@ public final class PopoverViewModel: ObservableObject {
 
     /// Called when a drag starts so the popover can stay open during the session
     public var onDragStarted: (() -> Void)?
+    public var onPopoverPinnedChanged: ((Bool) -> Void)?
     public var onCaptureRegion: (() -> Void)?
     public var onCaptureFullScreen: (() -> Void)?
     public var onRepeatLastRegion: (() -> Void)?
@@ -93,6 +95,16 @@ public final class PopoverViewModel: ObservableObject {
     }
 
     @discardableResult
+    public func copyImages(for entries: [CaptureEntry]) -> Bool {
+        let urls = entries.map { dragURL(for: $0) }
+        guard CapturePasteboardWriter.copyImageFiles(at: urls) else {
+            NSSound.beep()
+            return false
+        }
+        return true
+    }
+
+    @discardableResult
     public func copyText(for entry: CaptureEntry) async -> Bool {
         let url = URL(fileURLWithPath: store.path(for: entry))
         do {
@@ -153,6 +165,11 @@ public final class PopoverViewModel: ObservableObject {
             return
         }
         onRepeatLastRegion?()
+    }
+
+    public func togglePopoverPinned() {
+        isPopoverPinned.toggle()
+        onPopoverPinnedChanged?(isPopoverPinned)
     }
 
     public func thumbnailImage(for entry: CaptureEntry) async -> NSImage? {

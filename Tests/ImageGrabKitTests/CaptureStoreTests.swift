@@ -190,6 +190,29 @@ final class CaptureStoreTests: XCTestCase {
         XCTAssertEqual(item.string(forType: .fileURL), URL(fileURLWithPath: path).absoluteString)
     }
 
+    func testCapturePasteboardWriterCopiesMultipleImageFiles() throws {
+        let capturesDirectory = try makeCapturesDirectory()
+        defer { try? FileManager.default.removeItem(at: capturesDirectory) }
+
+        let firstURL = capturesDirectory.appendingPathComponent("first.png")
+        let secondURL = capturesDirectory.appendingPathComponent("second.png")
+        try pngData().write(to: firstURL)
+        try pngData().write(to: secondURL)
+
+        let pasteboard = try XCTUnwrap(NSPasteboard(name: NSPasteboard.Name(rawValue: "CapturePasteboardWriterTests-multi-\(UUID().uuidString)")))
+
+        XCTAssertTrue(CapturePasteboardWriter.copyImageFiles(at: [firstURL, secondURL], to: pasteboard))
+
+        let items = try XCTUnwrap(pasteboard.pasteboardItems)
+        XCTAssertEqual(items.count, 2)
+        XCTAssertNotNil(items[0].data(forType: .png))
+        XCTAssertEqual(items[0].string(forType: .string), firstURL.path)
+        XCTAssertEqual(items[0].string(forType: .fileURL), firstURL.absoluteString)
+        XCTAssertNotNil(items[1].data(forType: .png))
+        XCTAssertEqual(items[1].string(forType: .string), secondURL.path)
+        XCTAssertEqual(items[1].string(forType: .fileURL), secondURL.absoluteString)
+    }
+
     func testClearAllRemovesTrackedFiles() throws {
         let capturesDirectory = try makeCapturesDirectory()
         defer { try? FileManager.default.removeItem(at: capturesDirectory) }
