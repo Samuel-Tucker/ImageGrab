@@ -89,9 +89,7 @@ public final class PopoverViewModel: ObservableObject {
     }
 
     public func copyPath(for entry: CaptureEntry) {
-        let path = store.path(for: entry)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(path, forType: .string)
+        CapturePasteboardWriter.copyImageFile(at: URL(fileURLWithPath: store.path(for: entry)))
     }
 
     @discardableResult

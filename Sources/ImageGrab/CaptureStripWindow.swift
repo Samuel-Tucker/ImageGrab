@@ -15,6 +15,10 @@ final class CaptureStripWindow: NSPanel {
     private let stripHeight: CGFloat
     private let hideMargin: CGFloat = 10
     private var watchTimer: Timer?
+    /// How long the pointer must stay off the strip before it auto-hides.
+    private let hideGracePeriod: TimeInterval = 10
+    /// When the pointer was first seen outside the strip; nil while inside.
+    private var pointerExitedAt: Date?
     /// True while a tile is being renamed; suppresses pointer auto-hide so the
     /// strip doesn't vanish mid-edit if the cursor drifts off it.
     private var isEditingName = false
@@ -101,13 +105,23 @@ final class CaptureStripWindow: NSPanel {
     private func stopWatching() {
         watchTimer?.invalidate()
         watchTimer = nil
+        pointerExitedAt = nil
     }
 
     private func checkPointer() {
-        guard isPresented, !isDragging(), !isEditingName else { return }
+        guard isPresented, !isDragging(), !isEditingName else {
+            pointerExitedAt = nil
+            return
+        }
         let point = NSEvent.mouseLocation
-        if !frame.insetBy(dx: -hideMargin, dy: -hideMargin).contains(point) {
-            onAutoHide?()
+        if frame.insetBy(dx: -hideMargin, dy: -hideMargin).contains(point) {
+            pointerExitedAt = nil
+        } else if let exitedAt = pointerExitedAt {
+            if Date().timeIntervalSince(exitedAt) >= hideGracePeriod {
+                onAutoHide?()
+            }
+        } else {
+            pointerExitedAt = Date()
         }
     }
 }

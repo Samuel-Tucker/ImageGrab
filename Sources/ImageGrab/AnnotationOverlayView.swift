@@ -1,7 +1,8 @@
 import AppKit
+import CoreImage
 
 enum AnnotationTool {
-    case pen, box, arrow, text
+    case pen, box, arrow, text, blur, badge
 }
 
 struct Annotation {
@@ -12,6 +13,7 @@ struct Annotation {
     let lineWidth: CGFloat
     var text: String = ""
     var fontSize: CGFloat = 0
+    var blurRadius: CGFloat = 0
 }
 
 /// Text view used for in-place editing of a text annotation. It defers to the
@@ -78,6 +80,18 @@ final class AnnotationOverlayView: NSView {
     var currentTextBackgroundColor: NSColor = .white {
         didSet { applyEditingTextAttributes() }
     }
+    var currentBlurRadius: CGFloat = 18 {
+        didSet {
+            guard let selectedAnnotationIndex,
+                  annotations.indices.contains(selectedAnnotationIndex),
+                  annotations[selectedAnnotationIndex].tool == .blur else { return }
+            annotations[selectedAnnotationIndex].blurRadius = currentBlurRadius
+            clearRedoStack()
+            blurCache.removeAll()
+            needsDisplay = true
+            onAnnotationsChanged?()
+        }
+    }
     var onAnnotationsChanged: (@MainActor () -> Void)?
 
     /// When false the overlay ignores all pointer events (hit-testing falls through
@@ -98,6 +112,8 @@ final class AnnotationOverlayView: NSView {
     private var pendingTextEditOnUpIndex: Int?
     private let baseLineWidth: CGFloat = 3.0
     private let arrowLineWidth: CGFloat = 2.5
+    private var sourceImage: NSImage?
+    private var blurCache: [Int: NSImage] = [:]
 
     // Text editing state. While a text annotation is being edited, a real
     // `AnnotationTextView` is installed as a subview so the system provides the
@@ -121,6 +137,12 @@ final class AnnotationOverlayView: NSView {
     }
     var canUndo: Bool { !annotations.isEmpty }
     var canRedo: Bool { !redoStack.isEmpty }
+
+    func setSourceImage(_ image: NSImage) {
+        sourceImage = image
+        blurCache.removeAll()
+        needsDisplay = true
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         interactionEnabled ? super.hitTest(point) : nil
@@ -246,7 +268,7 @@ final class AnnotationOverlayView: NSView {
                 beginEditingTextAnnotation(at: selectedAnnotationIndex)
                 return true
             }
-        case 51: // Backspace - delete selected annotation
+        case 51, 117: // Backspace / forward delete - delete selected annotation
             annotations.remove(at: selectedAnnotationIndex)
             clearRedoStack()
             self.selectedAnnotationIndex = nil
@@ -306,8 +328,31 @@ final class AnnotationOverlayView: NSView {
             return
         }
 
+        if currentTool == .badge {
+            annotations.append(Annotation(
+                tool: .badge,
+                color: .black,
+                textBackgroundColor: .white,
+                points: [point],
+                lineWidth: 0,
+                text: "NOPE!",
+                fontSize: 34
+            ))
+            clearRedoStack()
+            selectedAnnotationIndex = annotations.indices.last
+            needsDisplay = true
+            onAnnotationsChanged?()
+            return
+        }
+
         let lw = currentTool == .arrow ? arrowLineWidth : baseLineWidth
-        currentAnnotation = Annotation(tool: currentTool, color: currentColor, points: [point], lineWidth: lw)
+        currentAnnotation = Annotation(
+            tool: currentTool,
+            color: currentColor,
+            points: [point],
+            lineWidth: lw,
+            blurRadius: currentTool == .blur ? currentBlurRadius : 0
+        )
         needsDisplay = true
     }
 
@@ -340,13 +385,13 @@ final class AnnotationOverlayView: NSView {
                 let dist = hypot(point.x - last.x, point.y - last.y)
                 if dist > 2 { currentAnnotation!.points.append(point) }
             }
-        case .box, .arrow:
+        case .box, .arrow, .blur:
             if currentAnnotation!.points.count == 1 {
                 currentAnnotation!.points.append(point)
             } else {
                 currentAnnotation!.points[1] = point
             }
-        case .text:
+        case .text, .badge:
             break
         }
         needsDisplay = true
@@ -558,10 +603,10 @@ final class AnnotationOverlayView: NSView {
         for (index, annotation) in annotations.enumerated() {
             // The annotation being edited is shown by the live text view instead.
             if editingAnnotationIndex == index { continue }
-            drawAnnotation(annotation)
+            drawAnnotation(annotation, blurSource: sourceImage, blurTargetRect: bounds, blurCache: &blurCache)
         }
         if let current = currentAnnotation {
-            drawAnnotation(current)
+            drawAnnotation(current, blurSource: sourceImage, blurTargetRect: bounds, blurCache: &blurCache)
         }
 
         if !isEditingText,
@@ -574,7 +619,12 @@ final class AnnotationOverlayView: NSView {
         }
     }
 
-    private func drawAnnotation(_ annotation: Annotation) {
+    private func drawAnnotation(
+        _ annotation: Annotation,
+        blurSource: NSImage?,
+        blurTargetRect: NSRect,
+        blurCache: inout [Int: NSImage]
+    ) {
         annotation.color.setStroke()
 
         switch annotation.tool {
@@ -647,8 +697,62 @@ final class AnnotationOverlayView: NSView {
                 backgroundColor: annotation.textBackgroundColor,
                 showCursor: false
             )
+
+        case .badge:
+            guard let pos = annotation.points.first else { return }
+            drawBadge(annotation.text, at: pos, fontSize: annotation.fontSize)
+
+        case .blur:
+            guard annotation.points.count == 2, let blurSource else { return }
+            let rect = normalizedRect(from: annotation.points[0], to: annotation.points[1])
+            guard rect.width >= 1, rect.height >= 1 else { return }
+            let cacheKey = Int(annotation.blurRadius.rounded())
+            let blurred: NSImage
+            if let cached = blurCache[cacheKey] {
+                blurred = cached
+            } else if let rendered = blurredImage(blurSource, radius: annotation.blurRadius) {
+                blurCache[cacheKey] = rendered
+                blurred = rendered
+            } else {
+                return
+            }
+            NSGraphicsContext.saveGraphicsState()
+            NSBezierPath(rect: rect).addClip()
+            blurred.draw(in: blurTargetRect)
+            NSGraphicsContext.restoreGraphicsState()
         }
     }
+
+    private func drawBadge(_ text: String, at position: CGPoint, fontSize: CGFloat) {
+        let font = NSFont.systemFont(ofSize: fontSize, weight: .black)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.black]
+        let attributed = NSAttributedString(string: text, attributes: attrs)
+        let size = attributed.size()
+        let paddingX: CGFloat = 14
+        let paddingY: CGFloat = 8
+        let rect = NSRect(
+            x: position.x - paddingX,
+            y: position.y - paddingY,
+            width: size.width + paddingX * 2,
+            height: size.height + paddingY * 2
+        )
+        NSColor.white.setFill()
+        NSBezierPath(roundedRect: rect, xRadius: 8, yRadius: 8).fill()
+        attributed.draw(at: position)
+    }
+
+    private func blurredImage(_ image: NSImage, radius: CGFloat) -> NSImage? {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        let input = CIImage(cgImage: cgImage)
+        let filter = CIFilter(name: "CIGaussianBlur")
+        filter?.setValue(input, forKey: kCIInputImageKey)
+        filter?.setValue(max(1, radius), forKey: kCIInputRadiusKey)
+        guard let output = filter?.outputImage?.cropped(to: input.extent),
+              let rendered = Self.ciContext.createCGImage(output, from: input.extent) else { return nil }
+        return NSImage(cgImage: rendered, size: image.size)
+    }
+
+    private static let ciContext = CIContext(options: [.cacheIntermediates: true])
 
     private func drawTextContent(_ text: String, at position: CGPoint, fontSize: CGFloat, color: NSColor, backgroundColor: NSColor, showCursor: Bool) {
         let displayText = text.isEmpty && showCursor ? " " : text
@@ -764,7 +868,10 @@ final class AnnotationOverlayView: NSView {
             .insetBy(dx: -5, dy: -5)
             .contains(point)
 
-        case .box:
+        case .badge:
+            return badgeRect(for: annotation).insetBy(dx: -5, dy: -5).contains(point)
+
+        case .box, .blur:
             guard annotation.points.count == 2 else { return false }
             return normalizedRect(from: annotation.points[0], to: annotation.points[1])
                 .insetBy(dx: -8, dy: -8)
@@ -790,7 +897,9 @@ final class AnnotationOverlayView: NSView {
                 at: annotation.points.first ?? .zero,
                 fontSize: annotation.fontSize
             )
-        case .box, .arrow, .pen:
+        case .badge:
+            return badgeRect(for: annotation)
+        case .box, .arrow, .pen, .blur:
             guard let first = annotation.points.first else { return .zero }
             var minX = first.x
             var maxX = first.x
@@ -804,6 +913,13 @@ final class AnnotationOverlayView: NSView {
             }
             return NSRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
         }
+    }
+
+    private func badgeRect(for annotation: Annotation) -> NSRect {
+        guard let position = annotation.points.first else { return .zero }
+        let font = NSFont.systemFont(ofSize: annotation.fontSize, weight: .black)
+        let size = NSAttributedString(string: annotation.text, attributes: [.font: font]).size()
+        return NSRect(x: position.x - 14, y: position.y - 8, width: size.width + 28, height: size.height + 16)
     }
 
     private func textBackgroundRect(text: String, at position: CGPoint, fontSize: CGFloat) -> NSRect {
@@ -871,6 +987,7 @@ final class AnnotationOverlayView: NSView {
         result.lockFocus()
         image.draw(in: NSRect(origin: .zero, size: image.size))
 
+        var compositeBlurCache: [Int: NSImage] = [:]
         for annotation in annotations {
             let scaledPoints = annotation.points.map {
                 CGPoint(x: $0.x * scale, y: $0.y * scale)
@@ -882,9 +999,17 @@ final class AnnotationOverlayView: NSView {
                 points: scaledPoints,
                 lineWidth: annotation.lineWidth * scale,
                 text: annotation.text,
-                fontSize: annotation.fontSize * scale
+                fontSize: annotation.fontSize * scale,
+                // Blur strength is stored in source-image pixels (the value shown
+                // by the toolbar), so it must not scale with preview coordinates.
+                blurRadius: annotation.blurRadius
             )
-            drawAnnotation(scaled)
+            drawAnnotation(
+                scaled,
+                blurSource: image,
+                blurTargetRect: NSRect(origin: .zero, size: image.size),
+                blurCache: &compositeBlurCache
+            )
         }
 
         result.unlockFocus()

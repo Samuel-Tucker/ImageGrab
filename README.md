@@ -26,7 +26,7 @@ A lightweight macOS menu bar app for fast native screenshots, quick markup, OCR,
 - **Thumbnail grid** — Browse up to 50 recent captures from the menu bar popover
 - **Rename and edit later** — Rename saved captures inline or reopen them for annotation edits
 - **Drag and drop** — Drag captures into chat apps, Gmail, Slack, Discord, browsers, Finder, terminals, and Electron apps
-- **Context menu** — Preview, copy path, copy text, edit annotations, reveal in Finder, rename, or delete any capture
+- **Context menu** — Preview, copy path (also carries the image for paste-into-web-apps), copy text, edit annotations, reveal in Finder, rename, or delete any capture
 - **Compatible output** — Saves PNG files for reliable drag-and-drop uploads into chat, email, and browser apps
 
 ## Requirements

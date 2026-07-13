@@ -35,6 +35,7 @@ final class CapturePreviewWindow: NSWindow {
     private var undoBtn: NSButton!
     private var redoBtn: NSButton!
     private var textBackgroundColorWell: NSColorWell!
+    private var blurValueLabel: NSTextField!
     private var filenameField: NSTextField!
     private var copyTextBtn: NSButton!
     private var colorButtons: [NSButton] = []
@@ -68,7 +69,7 @@ final class CapturePreviewWindow: NSWindow {
         let displayH = imgH * scale
 
         // Minimum width so toolbars/buttons are always visible
-        let minWindowW: CGFloat = 680
+        let minWindowW: CGFloat = 1040
         let windowW = max(displayW, minWindowW)
         let totalH = displayH + bottomBarH + annotBarH
 
@@ -114,9 +115,15 @@ final class CapturePreviewWindow: NSWindow {
 
         // Annotation overlay (on top of image + sprites, same frame)
         let overlay = AnnotationOverlayView(frame: NSRect(x: imageX, y: bottomBarH, width: displayW, height: displayH))
+        overlay.setSourceImage(image)
         overlay.onAnnotationsChanged = { [weak self] in self?.updateUndoRedoButtons() }
         annotationOverlay = overlay
         container.addSubview(overlay)
+        sprites.onSpritesChanged = { [weak self] in
+            guard let self else { return }
+            self.annotationOverlay.setSourceImage(self.spriteLayer.compositeOnto(image: self.capturedImage))
+            self.updateUndoRedoButtons()
+        }
 
         // Annotation toolbar (above image)
         let annotBar = NSView(frame: NSRect(x: 0, y: bottomBarH + displayH, width: windowW, height: annotBarH))
@@ -142,22 +149,39 @@ final class CapturePreviewWindow: NSWindow {
 
         // Tool segmented control
         let tools = NSSegmentedControl()
-        tools.segmentCount = 4
+        tools.segmentCount = 6
         tools.trackingMode = .selectOne
         tools.setImage(NSImage(systemSymbolName: "pencil.tip", accessibilityDescription: "Pen")!, forSegment: 0)
         tools.setImage(NSImage(systemSymbolName: "rectangle", accessibilityDescription: "Box")!, forSegment: 1)
         tools.setImage(NSImage(systemSymbolName: "arrow.up.right", accessibilityDescription: "Arrow")!, forSegment: 2)
         tools.setImage(NSImage(systemSymbolName: "textformat", accessibilityDescription: "Text")!, forSegment: 3)
-        tools.setWidth(36, forSegment: 0)
-        tools.setWidth(36, forSegment: 1)
-        tools.setWidth(36, forSegment: 2)
-        tools.setWidth(36, forSegment: 3)
+        tools.setImage(NSImage(systemSymbolName: "drop.halffull", accessibilityDescription: "Blur")!, forSegment: 4)
+        tools.setLabel("NOPE!", forSegment: 5)
+        for segment in 0..<5 { tools.setWidth(36, forSegment: segment) }
+        tools.setWidth(62, forSegment: 5)
+        tools.setToolTip("Draw a pixel-blurred area", forSegment: 4)
+        tools.setToolTip("Add a movable NOPE! badge", forSegment: 5)
         tools.selectedSegment = 1 // default to box
         tools.target = self
         tools.action = #selector(toolChanged(_:))
-        tools.frame = NSRect(x: x, y: 6, width: 150, height: 28)
+        tools.frame = NSRect(x: x, y: 6, width: 248, height: 28)
         bar.addSubview(tools)
-        x += 150 + 16
+        x += 248 + 12
+
+        let blurSlider = NSSlider(value: 18, minValue: 2, maxValue: 60, target: self, action: #selector(blurRadiusChanged(_:)))
+        blurSlider.frame = NSRect(x: x, y: 8, width: 92, height: 24)
+        blurSlider.toolTip = "Pixel blur strength"
+        bar.addSubview(blurSlider)
+        x += 96
+
+        let blurLabel = NSTextField(labelWithString: "18 px")
+        blurLabel.font = .monospacedDigitSystemFont(ofSize: 10, weight: .medium)
+        blurLabel.textColor = .secondaryLabelColor
+        blurLabel.alignment = .right
+        blurLabel.frame = NSRect(x: x, y: 12, width: 38, height: 16)
+        blurValueLabel = blurLabel
+        bar.addSubview(blurLabel)
+        x += 44
 
         // Separator
         let sep1 = separatorView(at: x, height: 24, y: 8)
@@ -419,8 +443,14 @@ final class CapturePreviewWindow: NSWindow {
 
     @objc private func toolChanged(_ sender: NSSegmentedControl) {
         annotationOverlay.commitTextIfNeeded()
-        let tools: [AnnotationTool] = [.pen, .box, .arrow, .text]
+        let tools: [AnnotationTool] = [.pen, .box, .arrow, .text, .blur, .badge]
         annotationOverlay.currentTool = tools[sender.selectedSegment]
+    }
+
+    @objc private func blurRadiusChanged(_ sender: NSSlider) {
+        let radius = CGFloat(sender.doubleValue.rounded())
+        annotationOverlay.currentBlurRadius = radius
+        blurValueLabel.stringValue = "\(Int(radius)) px"
     }
 
     @objc private func colorChanged(_ sender: NSButton) {

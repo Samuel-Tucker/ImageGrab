@@ -14,6 +14,11 @@ final class QuickViewPanel: NSPanel, NSWindowDelegate {
     private var outsideClickMonitor: Any?
     private var escapeKeyMonitor: Any?
     private var pendingCloseReason: QuickViewCloseReason = .window
+    private let pinButton = NSButton()
+
+    private(set) var isPinned = false {
+        didSet { updatePinButtonAppearance() }
+    }
 
     init(image: NSImage, filename: String, screen: NSScreen?) {
         let contentSize = QuickViewPanel.panelContentSize(on: screen)
@@ -25,6 +30,7 @@ final class QuickViewPanel: NSPanel, NSWindowDelegate {
         )
 
         isReleasedWhenClosed = false
+        hidesOnDeactivate = false
         level = .floating
         isFloatingPanel = true
         titlebarAppearsTransparent = true
@@ -50,9 +56,41 @@ final class QuickViewPanel: NSPanel, NSWindowDelegate {
         contentView.addSubview(imageView)
         self.contentView = contentView
 
+        installPinButton()
         update(image: image, filename: filename, screen: screen, centerOnScreen: true)
         startOutsideClickMonitor()
         startEscapeKeyMonitor()
+    }
+
+    private func installPinButton() {
+        pinButton.bezelStyle = .texturedRounded
+        pinButton.isBordered = false
+        pinButton.target = self
+        pinButton.action = #selector(togglePin)
+        updatePinButtonAppearance()
+
+        let accessoryView = NSView(frame: NSRect(x: 0, y: 0, width: 30, height: 24))
+        pinButton.frame = NSRect(x: 4, y: 2, width: 22, height: 20)
+        accessoryView.addSubview(pinButton)
+
+        let accessory = NSTitlebarAccessoryViewController()
+        accessory.view = accessoryView
+        accessory.layoutAttribute = .trailing
+        addTitlebarAccessoryViewController(accessory)
+    }
+
+    @objc private func togglePin() {
+        isPinned.toggle()
+    }
+
+    private func updatePinButtonAppearance() {
+        let symbolName = isPinned ? "pin.fill" : "pin"
+        let description = isPinned ? "Unpin preview" : "Pin preview on top"
+        pinButton.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: description)
+        pinButton.contentTintColor = isPinned ? .controlAccentColor : .secondaryLabelColor
+        pinButton.toolTip = isPinned
+            ? "Unpin — preview will close when you click elsewhere"
+            : "Pin on top — keep this preview above other windows"
     }
 
     override var canBecomeKey: Bool { true }
@@ -60,7 +98,7 @@ final class QuickViewPanel: NSPanel, NSWindowDelegate {
     override var canBecomeMain: Bool { false }
 
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 {
+        if event.keyCode == 53, !isPinned {
             pendingCloseReason = .escape
             close()
             return
@@ -104,7 +142,7 @@ final class QuickViewPanel: NSPanel, NSWindowDelegate {
         // In-app clicks (popover eye button) are handled by the toggle logic
         // in PopoverViewModel.showQuickView(for:), not by auto-dismissal
         outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            guard let self, self.isVisible else { return }
+            guard let self, self.isVisible, !self.isPinned else { return }
             let mouseLocation = NSEvent.mouseLocation
             if !self.frame.contains(mouseLocation) {
                 self.pendingCloseReason = .outsideClick
@@ -123,7 +161,7 @@ final class QuickViewPanel: NSPanel, NSWindowDelegate {
     private func startEscapeKeyMonitor() {
         stopEscapeKeyMonitor()
         escapeKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, self.isVisible, event.keyCode == 53 else {
+            guard let self, self.isVisible, !self.isPinned, event.keyCode == 53 else {
                 return event
             }
             self.pendingCloseReason = .escape

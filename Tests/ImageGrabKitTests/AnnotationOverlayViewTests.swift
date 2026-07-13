@@ -275,6 +275,86 @@ final class AnnotationOverlayViewTests: XCTestCase {
         assertPoint(overlay.debugAnnotations[0].points[1], x: 70, y: 75)
     }
 
+    func testBlurAnnotationCanBeMovedAndItsStrengthEdited() throws {
+        let overlay = makeOverlay()
+        overlay.currentTool = .blur
+        overlay.currentBlurRadius = 24
+
+        overlay.handlePointerDown(at: CGPoint(x: 20, y: 30))
+        overlay.handlePointerDragged(to: CGPoint(x: 100, y: 90))
+        overlay.handlePointerUp(at: CGPoint(x: 100, y: 90))
+
+        XCTAssertEqual(overlay.debugAnnotations.count, 1)
+        XCTAssertEqual(overlay.debugAnnotations[0].tool, .blur)
+        XCTAssertEqual(overlay.debugAnnotations[0].blurRadius, 24)
+
+        overlay.handlePointerDown(at: CGPoint(x: 50, y: 50))
+        overlay.handlePointerDragged(to: CGPoint(x: 70, y: 65))
+        overlay.handlePointerUp(at: CGPoint(x: 70, y: 65))
+        assertPoint(overlay.debugAnnotations[0].points[0], x: 40, y: 45)
+        assertPoint(overlay.debugAnnotations[0].points[1], x: 120, y: 105)
+
+        overlay.currentBlurRadius = 40
+        XCTAssertEqual(overlay.debugAnnotations[0].blurRadius, 40)
+    }
+
+    func testBadgeIsCreatedSelectedAndCanBeMovedAndDeleted() throws {
+        let overlay = makeOverlay()
+        overlay.currentTool = .badge
+
+        overlay.handlePointerDown(at: CGPoint(x: 40, y: 50))
+        XCTAssertEqual(overlay.debugAnnotations.count, 1)
+        XCTAssertEqual(overlay.debugAnnotations[0].tool, .badge)
+        XCTAssertEqual(overlay.debugAnnotations[0].text, "NOPE!")
+
+        overlay.handlePointerDown(at: CGPoint(x: 60, y: 60))
+        overlay.handlePointerDragged(to: CGPoint(x: 90, y: 80))
+        overlay.handlePointerUp(at: CGPoint(x: 90, y: 80))
+        assertPoint(overlay.debugAnnotations[0].points[0], x: 70, y: 70)
+
+        let delete = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "\u{7f}",
+            charactersIgnoringModifiers: "\u{7f}",
+            isARepeat: false,
+            keyCode: 51
+        )!
+        XCTAssertTrue(overlay.handleKeyDown(delete))
+        XCTAssertTrue(overlay.debugAnnotations.isEmpty)
+    }
+
+    func testBlurIsBakedIntoCompositeImage() throws {
+        let size = NSSize(width: 64, height: 64)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        NSColor.black.setFill()
+        NSBezierPath(rect: NSRect(x: 0, y: 0, width: 32, height: 64)).fill()
+        NSColor.white.setFill()
+        NSBezierPath(rect: NSRect(x: 32, y: 0, width: 32, height: 64)).fill()
+        image.unlockFocus()
+
+        let overlay = AnnotationOverlayView(frame: NSRect(origin: .zero, size: size))
+        overlay.currentTool = .blur
+        overlay.currentBlurRadius = 10
+        overlay.handlePointerDown(at: .zero)
+        overlay.handlePointerDragged(to: CGPoint(x: 64, y: 64))
+        overlay.handlePointerUp(at: CGPoint(x: 64, y: 64))
+
+        let composite = overlay.compositeOnto(image: image)
+        let bitmap = NSBitmapImageRep(data: composite.tiffRepresentation!)!
+        let boundaryPixel = bitmap.colorAt(
+            x: bitmap.pixelsWide / 2 - 1,
+            y: bitmap.pixelsHigh / 2
+        )!.usingColorSpace(.deviceRGB)!
+        XCTAssertGreaterThan(boundaryPixel.redComponent, 0.05)
+        XCTAssertLessThan(boundaryPixel.redComponent, 0.95)
+    }
+
     private func makeOverlay() -> AnnotationOverlayView {
         AnnotationOverlayView(frame: NSRect(x: 0, y: 0, width: 240, height: 180))
     }

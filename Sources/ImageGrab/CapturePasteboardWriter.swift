@@ -18,6 +18,18 @@ enum CapturePasteboardWriter {
     }
 
     @discardableResult
+    static func copyImageFile(at url: URL, to pasteboard: NSPasteboard = .general) -> Bool {
+        guard let image = NSImage(contentsOf: url),
+              copyImage(image, savedPath: url.path, to: pasteboard) else {
+            pasteboard.clearContents()
+            pasteboard.setString(url.path, forType: .string)
+            return false
+        }
+
+        return true
+    }
+
+    @discardableResult
     static func copyImageFiles(at urls: [URL], to pasteboard: NSPasteboard = .general) -> Bool {
         guard !urls.isEmpty else { return false }
 
