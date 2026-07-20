@@ -16,6 +16,10 @@ Hot-corner capture strip — drag a capture out, copy its path, or rename it inl
 
 ![Capture Strip](Screenshots/capture-strip.png)
 
+Rearrange mode — lift regions of the screenshot into draggable sprites and move them; the holes show where they came from:
+
+![Rearrange Mode](Screenshots/rearrange-mode.png)
+
 ## Features
 
 - **Global hotkeys** — Press `Ctrl+Cmd+G` for region capture or `Opt+Cmd+G` for full-screen capture. `Opt+G` is still attempted as a legacy region shortcut on systems that do not reserve it.
