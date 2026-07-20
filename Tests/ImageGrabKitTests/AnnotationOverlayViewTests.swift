@@ -45,6 +45,54 @@ final class AnnotationOverlayViewTests: XCTestCase {
         assertPoint(overlay.debugAnnotations[0].points[1], x: 110, y: 70)
     }
 
+    func testSelectedArrowCanBeRecolouredAndResized() throws {
+        let overlay = makeOverlay()
+        overlay.currentTool = .arrow
+        overlay.currentColor = .systemRed
+        overlay.currentArrowHeadSize = 18
+        overlay.currentArrowTailWidth = 3
+
+        overlay.handlePointerDown(at: CGPoint(x: 20, y: 30))
+        overlay.handlePointerDragged(to: CGPoint(x: 120, y: 80))
+        overlay.handlePointerUp(at: CGPoint(x: 120, y: 80))
+
+        XCTAssertEqual(overlay.debugAnnotations.count, 1)
+        XCTAssertEqual(overlay.debugAnnotations[0].arrowHeadSize, 18)
+        XCTAssertEqual(overlay.debugAnnotations[0].lineWidth, 3)
+
+        overlay.deselectAnnotation()
+        overlay.handlePointerDown(at: CGPoint(x: 70, y: 55))
+        overlay.currentColor = .systemBlue
+        overlay.currentArrowHeadSize = 32
+        overlay.currentArrowTailWidth = 7.5
+
+        XCTAssertTrue(overlay.debugAnnotations[0].color.isEqual(NSColor.systemBlue))
+        XCTAssertEqual(overlay.debugAnnotations[0].arrowHeadSize, 32)
+        XCTAssertEqual(overlay.debugAnnotations[0].lineWidth, 7.5)
+    }
+
+    func testSelectingArrowRestoresItsOwnSettings() throws {
+        let overlay = makeOverlay()
+        overlay.currentTool = .arrow
+        overlay.currentColor = .systemGreen
+        overlay.currentArrowHeadSize = 28
+        overlay.currentArrowTailWidth = 6
+
+        overlay.handlePointerDown(at: CGPoint(x: 20, y: 20))
+        overlay.handlePointerDragged(to: CGPoint(x: 120, y: 60))
+        overlay.handlePointerUp(at: CGPoint(x: 120, y: 60))
+        overlay.deselectAnnotation()
+
+        overlay.currentColor = .systemRed
+        overlay.currentArrowHeadSize = 10
+        overlay.currentArrowTailWidth = 2
+        overlay.handlePointerDown(at: CGPoint(x: 70, y: 40))
+
+        XCTAssertTrue(overlay.currentColor.isEqual(NSColor.systemGreen))
+        XCTAssertEqual(overlay.currentArrowHeadSize, 28)
+        XCTAssertEqual(overlay.currentArrowTailWidth, 6)
+    }
+
     func testTextAnnotationCommitsAndCanBeDragged() throws {
         let overlay = makeOverlay()
 
@@ -118,6 +166,25 @@ final class AnnotationOverlayViewTests: XCTestCase {
         XCTAssertFalse(overlay.debugIsEditingText)
         XCTAssertEqual(overlay.debugAnnotations.count, 1)
         XCTAssertEqual(overlay.debugAnnotations[0].text, "Hi\nThere")
+    }
+
+    func testTextAutomaticallyWrapsBeforeOverlayRightEdge() throws {
+        let overlay = makeOverlay()
+        overlay.currentTool = .text
+        overlay.handlePointerDown(at: CGPoint(x: 150, y: 130))
+
+        let originalText = "This annotation should wrap cleanly before it reaches the right edge"
+        overlay.debugEditingText = originalText
+
+        XCTAssertLessThanOrEqual(overlay.debugEditingTextFrame.maxX, overlay.bounds.maxX + 0.01)
+        XCTAssertGreaterThan(overlay.debugEditingTextFrame.height, 40)
+
+        overlay.debugCommitEditing()
+
+        XCTAssertEqual(overlay.debugAnnotations[0].text, originalText)
+        let committedBounds = overlay.debugAnnotationBounds(at: 0)
+        XCTAssertLessThanOrEqual(committedBounds.maxX, overlay.bounds.maxX + 0.01)
+        XCTAssertGreaterThan(committedBounds.height, 40)
     }
 
     func testClickingExistingTextWithTextToolReopensEditingImmediately() throws {
@@ -355,8 +422,53 @@ final class AnnotationOverlayViewTests: XCTestCase {
         XCTAssertLessThan(boundaryPixel.redComponent, 0.95)
     }
 
+    func testArrowHeadAndTailSizesAreBakedIntoCompositeImage() throws {
+        let compactArrow = compositeArrow(headSize: 6, tailWidth: 1)
+        let prominentArrow = compositeArrow(headSize: 36, tailWidth: 8)
+
+        let compactBluePixels = bluePixelCount(in: compactArrow)
+        let prominentBluePixels = bluePixelCount(in: prominentArrow)
+
+        XCTAssertGreaterThan(compactBluePixels, 50)
+        XCTAssertGreaterThan(prominentBluePixels, compactBluePixels * 2)
+    }
+
     private func makeOverlay() -> AnnotationOverlayView {
         AnnotationOverlayView(frame: NSRect(x: 0, y: 0, width: 240, height: 180))
+    }
+
+    private func compositeArrow(headSize: CGFloat, tailWidth: CGFloat) -> NSImage {
+        let sourceSize = NSSize(width: 200, height: 200)
+        let source = NSImage(size: sourceSize)
+        source.lockFocus()
+        NSColor.white.setFill()
+        NSBezierPath(rect: NSRect(origin: .zero, size: sourceSize)).fill()
+        source.unlockFocus()
+
+        let overlay = AnnotationOverlayView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
+        overlay.currentTool = .arrow
+        overlay.currentColor = .systemBlue
+        overlay.currentArrowHeadSize = headSize
+        overlay.currentArrowTailWidth = tailWidth
+        overlay.handlePointerDown(at: CGPoint(x: 10, y: 50))
+        overlay.handlePointerDragged(to: CGPoint(x: 90, y: 50))
+        overlay.handlePointerUp(at: CGPoint(x: 90, y: 50))
+        return overlay.compositeOnto(image: source)
+    }
+
+    private func bluePixelCount(in image: NSImage) -> Int {
+        guard let data = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: data) else { return 0 }
+        var count = 0
+        for y in 0..<bitmap.pixelsHigh {
+            for x in 0..<bitmap.pixelsWide {
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+                if color.blueComponent > 0.5, color.redComponent < 0.5 {
+                    count += 1
+                }
+            }
+        }
+        return count
     }
 
     private func assertPoint(_ point: CGPoint, x: CGFloat, y: CGFloat, file: StaticString = #filePath, line: UInt = #line) {

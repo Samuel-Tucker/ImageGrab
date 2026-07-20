@@ -7,10 +7,11 @@ enum AnnotationTool {
 
 struct Annotation {
     let tool: AnnotationTool
-    let color: NSColor
+    var color: NSColor
     var textBackgroundColor: NSColor = .white
     var points: [CGPoint]
-    let lineWidth: CGFloat
+    var lineWidth: CGFloat
+    var arrowHeadSize: CGFloat = 14
     var text: String = ""
     var fontSize: CGFloat = 0
     var blurRadius: CGFloat = 0
@@ -72,17 +73,24 @@ final class AnnotationTextView: NSTextView {
 @MainActor
 final class AnnotationOverlayView: NSView {
     var currentTool: AnnotationTool = .box {
-        didSet { window?.invalidateCursorRects(for: self) }
+        didSet {
+            window?.invalidateCursorRects(for: self)
+            onSelectionChanged?()
+        }
     }
     var currentColor: NSColor = .systemRed {
-        didSet { applyEditingTextAttributes() }
+        didSet {
+            applyEditingTextAttributes()
+            updateSelectedAnnotationColor()
+        }
     }
     var currentTextBackgroundColor: NSColor = .white {
         didSet { applyEditingTextAttributes() }
     }
     var currentBlurRadius: CGFloat = 18 {
         didSet {
-            guard let selectedAnnotationIndex,
+            guard !isSynchronizingSelectionControls,
+                  let selectedAnnotationIndex,
                   annotations.indices.contains(selectedAnnotationIndex),
                   annotations[selectedAnnotationIndex].tool == .blur else { return }
             annotations[selectedAnnotationIndex].blurRadius = currentBlurRadius
@@ -92,7 +100,28 @@ final class AnnotationOverlayView: NSView {
             onAnnotationsChanged?()
         }
     }
+    var currentArrowHeadSize: CGFloat = 14 {
+        didSet {
+            let clamped = min(max(currentArrowHeadSize, 6), 48)
+            if currentArrowHeadSize != clamped {
+                currentArrowHeadSize = clamped
+                return
+            }
+            updateSelectedArrow { $0.arrowHeadSize = clamped }
+        }
+    }
+    var currentArrowTailWidth: CGFloat = 2.5 {
+        didSet {
+            let clamped = min(max(currentArrowTailWidth, 1), 12)
+            if currentArrowTailWidth != clamped {
+                currentArrowTailWidth = clamped
+                return
+            }
+            updateSelectedArrow { $0.lineWidth = clamped }
+        }
+    }
     var onAnnotationsChanged: (@MainActor () -> Void)?
+    var onSelectionChanged: (@MainActor () -> Void)?
 
     /// When false the overlay ignores all pointer events (hit-testing falls through
     /// to the view below). Used to hand clicks to the sprite layer in rearrange mode.
@@ -107,11 +136,11 @@ final class AnnotationOverlayView: NSView {
     private var movingAnnotationIndex: Int?
     private var lastDragPoint: CGPoint?
     private var didMoveSelection = false
+    private var isSynchronizingSelectionControls = false
     /// Set on mouse-down over a text annotation that should re-open for editing if
     /// the gesture turns out to be a click rather than a drag. Resolved on mouse-up.
     private var pendingTextEditOnUpIndex: Int?
     private let baseLineWidth: CGFloat = 3.0
-    private let arrowLineWidth: CGFloat = 2.5
     private var sourceImage: NSImage?
     private var blurCache: [Int: NSImage] = [:]
 
@@ -137,11 +166,76 @@ final class AnnotationOverlayView: NSView {
     }
     var canUndo: Bool { !annotations.isEmpty }
     var canRedo: Bool { !redoStack.isEmpty }
+    var selectedAnnotationTool: AnnotationTool? {
+        guard let selectedAnnotationIndex, annotations.indices.contains(selectedAnnotationIndex) else { return nil }
+        return annotations[selectedAnnotationIndex].tool
+    }
 
     func setSourceImage(_ image: NSImage) {
         sourceImage = image
         blurCache.removeAll()
         needsDisplay = true
+    }
+
+    func deselectAnnotation() {
+        guard selectedAnnotationIndex != nil else {
+            onSelectionChanged?()
+            return
+        }
+        selectedAnnotationIndex = nil
+        movingAnnotationIndex = nil
+        pendingTextEditOnUpIndex = nil
+        synchronizeControlsFromSelection()
+        needsDisplay = true
+    }
+
+    private func synchronizeControlsFromSelection() {
+        guard let selectedAnnotationIndex,
+              annotations.indices.contains(selectedAnnotationIndex) else {
+            onSelectionChanged?()
+            return
+        }
+
+        let annotation = annotations[selectedAnnotationIndex]
+        isSynchronizingSelectionControls = true
+        if [.pen, .box, .arrow, .text].contains(annotation.tool) {
+            currentColor = annotation.color
+        }
+        if annotation.tool == .text {
+            currentTextBackgroundColor = annotation.textBackgroundColor
+        } else if annotation.tool == .arrow {
+            currentArrowHeadSize = annotation.arrowHeadSize
+            currentArrowTailWidth = annotation.lineWidth
+        } else if annotation.tool == .blur {
+            currentBlurRadius = annotation.blurRadius
+        }
+        isSynchronizingSelectionControls = false
+        onSelectionChanged?()
+    }
+
+    private func updateSelectedAnnotationColor() {
+        guard !isSynchronizingSelectionControls,
+              let selectedAnnotationIndex,
+              annotations.indices.contains(selectedAnnotationIndex),
+              [.pen, .box, .arrow, .text].contains(annotations[selectedAnnotationIndex].tool),
+              !annotations[selectedAnnotationIndex].color.isEqual(currentColor) else { return }
+
+        annotations[selectedAnnotationIndex].color = currentColor
+        clearRedoStack()
+        needsDisplay = true
+        onAnnotationsChanged?()
+    }
+
+    private func updateSelectedArrow(_ update: (inout Annotation) -> Void) {
+        guard !isSynchronizingSelectionControls,
+              let selectedAnnotationIndex,
+              annotations.indices.contains(selectedAnnotationIndex),
+              annotations[selectedAnnotationIndex].tool == .arrow else { return }
+
+        update(&annotations[selectedAnnotationIndex])
+        clearRedoStack()
+        needsDisplay = true
+        onAnnotationsChanged?()
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -177,6 +271,7 @@ final class AnnotationOverlayView: NSView {
         guard !annotations.isEmpty else { return }
         redoStack.append(annotations.removeLast())
         selectedAnnotationIndex = nil
+        synchronizeControlsFromSelection()
         needsDisplay = true
         window?.invalidateCursorRects(for: self)
         onAnnotationsChanged?()
@@ -187,6 +282,7 @@ final class AnnotationOverlayView: NSView {
         guard let annotation = redoStack.popLast() else { return }
         annotations.append(annotation)
         selectedAnnotationIndex = annotations.indices.last
+        synchronizeControlsFromSelection()
         needsDisplay = true
         window?.invalidateCursorRects(for: self)
         onAnnotationsChanged?()
@@ -223,12 +319,14 @@ final class AnnotationOverlayView: NSView {
                 annotations.append(annotation)
                 selectedAnnotationIndex = annotations.indices.last
             }
+            synchronizeControlsFromSelection()
             onAnnotationsChanged?()
         } else if let existingIndex, annotations.indices.contains(existingIndex) {
             // Editing left the text empty: drop the annotation entirely.
             if !preservingRedo { clearRedoStack() }
             annotations.remove(at: existingIndex)
             selectedAnnotationIndex = nil
+            synchronizeControlsFromSelection()
             onAnnotationsChanged?()
         }
 
@@ -272,12 +370,14 @@ final class AnnotationOverlayView: NSView {
             annotations.remove(at: selectedAnnotationIndex)
             clearRedoStack()
             self.selectedAnnotationIndex = nil
+            synchronizeControlsFromSelection()
             needsDisplay = true
             window?.invalidateCursorRects(for: self)
             onAnnotationsChanged?()
             return true
         case 53: // Escape - clear selection
             self.selectedAnnotationIndex = nil
+            synchronizeControlsFromSelection()
             needsDisplay = true
             return true
         default:
@@ -312,6 +412,7 @@ final class AnnotationOverlayView: NSView {
             // editor (Text tool only); any drag repositions the annotation.
             currentAnnotation = nil
             selectedAnnotationIndex = hitIndex
+            synchronizeControlsFromSelection()
             movingAnnotationIndex = hitIndex
             lastDragPoint = point
             didMoveSelection = false
@@ -322,6 +423,7 @@ final class AnnotationOverlayView: NSView {
         }
 
         selectedAnnotationIndex = nil
+        synchronizeControlsFromSelection()
 
         if currentTool == .text {
             startEditing(at: point, existingIndex: nil, initialText: "")
@@ -340,17 +442,19 @@ final class AnnotationOverlayView: NSView {
             ))
             clearRedoStack()
             selectedAnnotationIndex = annotations.indices.last
+            synchronizeControlsFromSelection()
             needsDisplay = true
             onAnnotationsChanged?()
             return
         }
 
-        let lw = currentTool == .arrow ? arrowLineWidth : baseLineWidth
+        let lw = currentTool == .arrow ? currentArrowTailWidth : baseLineWidth
         currentAnnotation = Annotation(
             tool: currentTool,
             color: currentColor,
             points: [point],
             lineWidth: lw,
+            arrowHeadSize: currentArrowHeadSize,
             blurRadius: currentTool == .blur ? currentBlurRadius : 0
         )
         needsDisplay = true
@@ -425,6 +529,7 @@ final class AnnotationOverlayView: NSView {
             annotations.append(annotation)
             clearRedoStack()
             selectedAnnotationIndex = annotations.indices.last
+            synchronizeControlsFromSelection()
             onAnnotationsChanged?()
         }
         currentAnnotation = nil
@@ -455,9 +560,8 @@ final class AnnotationOverlayView: NSView {
         guard let position = annotation.points.first else { return }
 
         selectedAnnotationIndex = index
+        synchronizeControlsFromSelection()
         currentFontSize = annotation.fontSize
-        currentColor = annotation.color
-        currentTextBackgroundColor = annotation.textBackgroundColor
         startEditing(at: position, existingIndex: index, initialText: annotation.text)
     }
 
@@ -479,18 +583,11 @@ final class AnnotationOverlayView: NSView {
         textView.smartInsertDeleteEnabled = false
         textView.textContainerInset = NSSize(width: editorPadding, height: editorPadding)
         textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.lineBreakMode = .byWordWrapping
         textView.textContainer?.widthTracksTextView = false
-        textView.textContainer?.size = NSSize(
-            width: CGFloat.greatestFiniteMagnitude,
-            height: CGFloat.greatestFiniteMagnitude
-        )
         textView.isHorizontallyResizable = true
         textView.isVerticallyResizable = true
         textView.minSize = .zero
-        textView.maxSize = NSSize(
-            width: CGFloat.greatestFiniteMagnitude,
-            height: CGFloat.greatestFiniteMagnitude
-        )
         textView.wantsLayer = true
         textView.layer?.cornerRadius = 4
         textView.string = initialText
@@ -538,10 +635,17 @@ final class AnnotationOverlayView: NSView {
               let container = textView.textContainer,
               let layoutManager = textView.layoutManager else { return }
 
+        let wrapWidth = textWrapWidth(at: editingPosition, in: bounds)
+        container.size = NSSize(width: wrapWidth, height: CGFloat.greatestFiniteMagnitude)
+        textView.maxSize = NSSize(
+            width: wrapWidth + editorPadding * 2 + caretSlack,
+            height: CGFloat.greatestFiniteMagnitude
+        )
         layoutManager.ensureLayout(for: container)
         let used = layoutManager.usedRect(for: container).size
-        let width = max(minEditorWidth, ceil(used.width) + editorPadding * 2 + caretSlack)
-        let height = ceil(used.height) + editorPadding * 2
+        let contentWidth = min(wrapWidth, max(minEditorWidth, ceil(used.width)))
+        let width = contentWidth + editorPadding * 2 + caretSlack
+        let height = max(textLineHeight(for: currentEditorFont()), ceil(used.height)) + editorPadding * 2
 
         let lineHeight = textLineHeight(for: currentEditorFont())
         let topY = editingPosition.y + lineHeight + editorPadding
@@ -667,7 +771,7 @@ final class AnnotationOverlayView: NSView {
             shaft.stroke()
 
             let angle = atan2(end.y - start.y, end.x - start.x)
-            let headLen = annotation.lineWidth * 5
+            let headLen = annotation.arrowHeadSize
             let headAngle: CGFloat = .pi / 6
 
             let p1 = CGPoint(
@@ -695,7 +799,8 @@ final class AnnotationOverlayView: NSView {
                 fontSize: annotation.fontSize,
                 color: annotation.color,
                 backgroundColor: annotation.textBackgroundColor,
-                showCursor: false
+                showCursor: false,
+                targetBounds: blurTargetRect
             )
 
         case .badge:
@@ -754,14 +859,26 @@ final class AnnotationOverlayView: NSView {
 
     private static let ciContext = CIContext(options: [.cacheIntermediates: true])
 
-    private func drawTextContent(_ text: String, at position: CGPoint, fontSize: CGFloat, color: NSColor, backgroundColor: NSColor, showCursor: Bool) {
+    private func drawTextContent(
+        _ text: String,
+        at position: CGPoint,
+        fontSize: CGFloat,
+        color: NSColor,
+        backgroundColor: NSColor,
+        showCursor: Bool,
+        targetBounds: NSRect
+    ) {
         let displayText = text.isEmpty && showCursor ? " " : text
         let font = NSFont.systemFont(ofSize: fontSize, weight: .medium)
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: color,
         ]
-        let lines = textLines(for: displayText)
+        let lines = wrappedTextLines(
+            for: displayText,
+            font: font,
+            maxWidth: textWrapWidth(at: position, in: targetBounds)
+        )
         let lineHeight = textLineHeight(for: font)
         let textSize = multilineTextSize(lines: lines, font: font, lineHeight: lineHeight)
 
@@ -899,7 +1016,22 @@ final class AnnotationOverlayView: NSView {
             )
         case .badge:
             return badgeRect(for: annotation)
-        case .box, .arrow, .pen, .blur:
+        case .arrow:
+            guard let first = annotation.points.first else { return .zero }
+            var minX = first.x
+            var maxX = first.x
+            var minY = first.y
+            var maxY = first.y
+            for point in annotation.points.dropFirst() {
+                minX = min(minX, point.x)
+                maxX = max(maxX, point.x)
+                minY = min(minY, point.y)
+                maxY = max(maxY, point.y)
+            }
+            let padding = max(annotation.arrowHeadSize * 0.55, annotation.lineWidth)
+            return NSRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+                .insetBy(dx: -padding, dy: -padding)
+        case .box, .pen, .blur:
             guard let first = annotation.points.first else { return .zero }
             var minX = first.x
             var maxX = first.x
@@ -926,7 +1058,15 @@ final class AnnotationOverlayView: NSView {
         let displayText = text.isEmpty ? " " : text
         let font = NSFont.systemFont(ofSize: fontSize, weight: .medium)
         let lineHeight = textLineHeight(for: font)
-        let textSize = multilineTextSize(lines: textLines(for: displayText), font: font, lineHeight: lineHeight)
+        let textSize = multilineTextSize(
+            lines: wrappedTextLines(
+                for: displayText,
+                font: font,
+                maxWidth: textWrapWidth(at: position, in: bounds)
+            ),
+            font: font,
+            lineHeight: lineHeight
+        )
         let padding: CGFloat = 4
         return NSRect(
             x: position.x - padding,
@@ -936,8 +1076,59 @@ final class AnnotationOverlayView: NSView {
         )
     }
 
-    private func textLines(for text: String) -> [String] {
-        text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    /// Width available to text beginning at `position`, leaving room for the
+    /// translucent backing and the live editor caret at the target's right edge.
+    private func textWrapWidth(at position: CGPoint, in targetBounds: NSRect) -> CGFloat {
+        max(1, targetBounds.maxX - position.x - editorPadding - caretSlack)
+    }
+
+    /// Return the visual lines produced by AppKit word wrapping. Using the same
+    /// text system as the live editor keeps committed annotations from changing
+    /// shape when the NSTextView is removed.
+    private func wrappedTextLines(for text: String, font: NSFont, maxWidth: CGFloat) -> [String] {
+        guard !text.isEmpty else { return [""] }
+
+        let storage = NSTextStorage(
+            attributedString: NSAttributedString(string: text, attributes: [.font: font])
+        )
+        let layoutManager = NSLayoutManager()
+        let container = NSTextContainer(
+            size: NSSize(width: max(1, maxWidth), height: CGFloat.greatestFiniteMagnitude)
+        )
+        container.lineFragmentPadding = 0
+        container.lineBreakMode = .byWordWrapping
+        layoutManager.addTextContainer(container)
+        storage.addLayoutManager(layoutManager)
+        layoutManager.ensureLayout(for: container)
+
+        let glyphRange = layoutManager.glyphRange(for: container)
+        guard glyphRange.length > 0 else { return [""] }
+
+        let source = text as NSString
+        var lines: [String] = []
+        var glyphIndex = glyphRange.location
+        while glyphIndex < NSMaxRange(glyphRange) {
+            var lineGlyphRange = NSRange()
+            _ = layoutManager.lineFragmentUsedRect(
+                forGlyphAt: glyphIndex,
+                effectiveRange: &lineGlyphRange
+            )
+            let characterRange = layoutManager.characterRange(
+                forGlyphRange: lineGlyphRange,
+                actualGlyphRange: nil
+            )
+            var line = source.substring(with: characterRange)
+            if line.hasSuffix("\n") {
+                line.removeLast()
+            }
+            lines.append(line)
+            glyphIndex = NSMaxRange(lineGlyphRange)
+        }
+
+        if text.hasSuffix("\n") {
+            lines.append("")
+        }
+        return lines.isEmpty ? [""] : lines
     }
 
     private func textLineHeight(for font: NSFont) -> CGFloat {
@@ -998,6 +1189,7 @@ final class AnnotationOverlayView: NSView {
                 textBackgroundColor: annotation.textBackgroundColor,
                 points: scaledPoints,
                 lineWidth: annotation.lineWidth * scale,
+                arrowHeadSize: annotation.arrowHeadSize * scale,
                 text: annotation.text,
                 fontSize: annotation.fontSize * scale,
                 // Blur strength is stored in source-image pixels (the value shown
@@ -1034,6 +1226,11 @@ extension AnnotationOverlayView {
             applyEditingTextAttributes()
             layoutEditingTextView()
         }
+    }
+    var debugEditingTextFrame: NSRect { editingTextView?.frame ?? .zero }
+    func debugAnnotationBounds(at index: Int) -> NSRect {
+        guard annotations.indices.contains(index) else { return .zero }
+        return annotationBounds(annotations[index])
     }
     func debugCommitEditing() { commitTextIfNeeded() }
 }

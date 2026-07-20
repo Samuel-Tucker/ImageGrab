@@ -35,14 +35,24 @@ final class CapturePreviewWindow: NSWindow {
     private var undoBtn: NSButton!
     private var redoBtn: NSButton!
     private var textBackgroundColorWell: NSColorWell!
+    private var annotationSettingsContainer: NSView!
+    private var annotationSettingsHint: NSTextField!
+    private var blurControls: [NSView] = []
+    private var arrowControls: [NSView] = []
+    private var blurSlider: NSSlider!
     private var blurValueLabel: NSTextField!
+    private var arrowHeadSlider: NSSlider!
+    private var arrowHeadValueLabel: NSTextField!
+    private var arrowTailSlider: NSSlider!
+    private var arrowTailValueLabel: NSTextField!
     private var filenameField: NSTextField!
     private var copyTextBtn: NSButton!
     private var colorButtons: [NSButton] = []
     private var ocrPopover: NSPopover?
     private var ocrPopoverDelegate: OCRPopoverCloseHandler?
 
-    private let presetColors: [NSColor] = [.systemRed, .systemBlue, .systemGreen, .systemYellow, .white]
+    private let presetColors: [NSColor] = [.systemRed, .systemBlue, .systemGreen, .systemYellow, .black, .white]
+    private let presetColorNames = ["Red", "Blue", "Green", "Yellow", "Black", "White"]
 
     init(
         image: NSImage,
@@ -117,6 +127,7 @@ final class CapturePreviewWindow: NSWindow {
         let overlay = AnnotationOverlayView(frame: NSRect(x: imageX, y: bottomBarH, width: displayW, height: displayH))
         overlay.setSourceImage(image)
         overlay.onAnnotationsChanged = { [weak self] in self?.updateUndoRedoButtons() }
+        overlay.onSelectionChanged = { [weak self] in self?.refreshAnnotationControls() }
         annotationOverlay = overlay
         container.addSubview(overlay)
         sprites.onSpritesChanged = { [weak self] in
@@ -161,6 +172,7 @@ final class CapturePreviewWindow: NSWindow {
         tools.setWidth(62, forSegment: 5)
         tools.setToolTip("Draw a pixel-blurred area", forSegment: 4)
         tools.setToolTip("Add a movable NOPE! badge", forSegment: 5)
+        tools.setToolTip("Draw an arrow; select it to edit colour, head and tail", forSegment: 2)
         tools.selectedSegment = 1 // default to box
         tools.target = self
         tools.action = #selector(toolChanged(_:))
@@ -168,20 +180,11 @@ final class CapturePreviewWindow: NSWindow {
         bar.addSubview(tools)
         x += 248 + 12
 
-        let blurSlider = NSSlider(value: 18, minValue: 2, maxValue: 60, target: self, action: #selector(blurRadiusChanged(_:)))
-        blurSlider.frame = NSRect(x: x, y: 8, width: 92, height: 24)
-        blurSlider.toolTip = "Pixel blur strength"
-        bar.addSubview(blurSlider)
-        x += 96
-
-        let blurLabel = NSTextField(labelWithString: "18 px")
-        blurLabel.font = .monospacedDigitSystemFont(ofSize: 10, weight: .medium)
-        blurLabel.textColor = .secondaryLabelColor
-        blurLabel.alignment = .right
-        blurLabel.frame = NSRect(x: x, y: 12, width: 38, height: 16)
-        blurValueLabel = blurLabel
-        bar.addSubview(blurLabel)
-        x += 44
+        let settings = NSView(frame: NSRect(x: x, y: 0, width: 184, height: 40))
+        annotationSettingsContainer = settings
+        setupContextualAnnotationControls(in: settings)
+        bar.addSubview(settings)
+        x += 184 + 8
 
         // Separator
         let sep1 = separatorView(at: x, height: 24, y: 8)
@@ -199,6 +202,8 @@ final class CapturePreviewWindow: NSWindow {
             btn.tag = i
             btn.target = self
             btn.action = #selector(colorChanged(_:))
+            btn.toolTip = "\(presetColorNames[i]) annotation colour"
+            btn.setAccessibilityLabel("\(presetColorNames[i]) annotation colour")
 
             if i == 0 {
                 btn.layer?.borderColor = NSColor.controlAccentColor.cgColor
@@ -285,6 +290,65 @@ final class CapturePreviewWindow: NSWindow {
         copyTextBtn.toolTip = "Copy recognized text from this capture"
         self.copyTextBtn = copyTextBtn
         bar.addSubview(copyTextBtn)
+
+        refreshAnnotationControls()
+    }
+
+    private func setupContextualAnnotationControls(in container: NSView) {
+        let hint = NSTextField(labelWithString: "")
+        hint.font = .systemFont(ofSize: 11, weight: .medium)
+        hint.textColor = .tertiaryLabelColor
+        hint.alignment = .center
+        hint.frame = NSRect(x: 0, y: 12, width: 178, height: 16)
+        annotationSettingsHint = hint
+        container.addSubview(hint)
+
+        let blurTitle = compactSettingsLabel("Blur", frame: NSRect(x: 0, y: 12, width: 30, height: 14))
+        let blurSlider = NSSlider(value: 18, minValue: 2, maxValue: 60, target: self, action: #selector(blurRadiusChanged(_:)))
+        blurSlider.frame = NSRect(x: 32, y: 8, width: 96, height: 24)
+        blurSlider.toolTip = "Pixel blur strength"
+        let blurValue = compactValueLabel(frame: NSRect(x: 132, y: 12, width: 46, height: 14))
+        self.blurSlider = blurSlider
+        blurValueLabel = blurValue
+        blurControls = [blurTitle, blurSlider, blurValue]
+
+        let headTitle = compactSettingsLabel("Head", frame: NSRect(x: 0, y: 21, width: 32, height: 13))
+        let headSlider = NSSlider(value: 14, minValue: 6, maxValue: 48, target: self, action: #selector(arrowHeadSizeChanged(_:)))
+        headSlider.frame = NSRect(x: 34, y: 17, width: 94, height: 17)
+        headSlider.toolTip = "Arrow head size"
+        let headValue = compactValueLabel(frame: NSRect(x: 132, y: 20, width: 46, height: 13))
+        arrowHeadSlider = headSlider
+        arrowHeadValueLabel = headValue
+
+        let tailTitle = compactSettingsLabel("Tail", frame: NSRect(x: 0, y: 5, width: 32, height: 13))
+        let tailSlider = NSSlider(value: 2.5, minValue: 1, maxValue: 12, target: self, action: #selector(arrowTailWidthChanged(_:)))
+        tailSlider.frame = NSRect(x: 34, y: 1, width: 94, height: 17)
+        tailSlider.toolTip = "Arrow tail thickness"
+        let tailValue = compactValueLabel(frame: NSRect(x: 132, y: 4, width: 46, height: 13))
+        arrowTailSlider = tailSlider
+        arrowTailValueLabel = tailValue
+        arrowControls = [headTitle, headSlider, headValue, tailTitle, tailSlider, tailValue]
+
+        for control in blurControls + arrowControls {
+            container.addSubview(control)
+        }
+    }
+
+    private func compactSettingsLabel(_ title: String, frame: NSRect) -> NSTextField {
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: 10, weight: .medium)
+        label.textColor = .secondaryLabelColor
+        label.frame = frame
+        return label
+    }
+
+    private func compactValueLabel(frame: NSRect) -> NSTextField {
+        let label = NSTextField(labelWithString: "")
+        label.font = .monospacedDigitSystemFont(ofSize: 10, weight: .medium)
+        label.textColor = .secondaryLabelColor
+        label.alignment = .right
+        label.frame = frame
+        return label
     }
 
     private func separatorView(at x: CGFloat, height: CGFloat, y: CGFloat) -> NSView {
@@ -443,8 +507,10 @@ final class CapturePreviewWindow: NSWindow {
 
     @objc private func toolChanged(_ sender: NSSegmentedControl) {
         annotationOverlay.commitTextIfNeeded()
+        annotationOverlay.deselectAnnotation()
         let tools: [AnnotationTool] = [.pen, .box, .arrow, .text, .blur, .badge]
         annotationOverlay.currentTool = tools[sender.selectedSegment]
+        refreshAnnotationControls()
     }
 
     @objc private func blurRadiusChanged(_ sender: NSSlider) {
@@ -453,17 +519,21 @@ final class CapturePreviewWindow: NSWindow {
         blurValueLabel.stringValue = "\(Int(radius)) px"
     }
 
+    @objc private func arrowHeadSizeChanged(_ sender: NSSlider) {
+        let size = CGFloat(sender.doubleValue.rounded())
+        annotationOverlay.currentArrowHeadSize = size
+        arrowHeadValueLabel.stringValue = "\(Int(size)) px"
+    }
+
+    @objc private func arrowTailWidthChanged(_ sender: NSSlider) {
+        let width = CGFloat((sender.doubleValue * 2).rounded() / 2)
+        annotationOverlay.currentArrowTailWidth = width
+        arrowTailValueLabel.stringValue = String(format: "%.1f px", width)
+    }
+
     @objc private func colorChanged(_ sender: NSButton) {
         annotationOverlay.currentColor = presetColors[sender.tag]
-        for (i, btn) in colorButtons.enumerated() {
-            if i == sender.tag {
-                btn.layer?.borderColor = NSColor.controlAccentColor.cgColor
-                btn.layer?.borderWidth = 2.5
-            } else {
-                btn.layer?.borderColor = NSColor.gray.withAlphaComponent(0.5).cgColor
-                btn.layer?.borderWidth = 1
-            }
-        }
+        updateSelectedColorButton()
     }
 
     @objc private func textBackgroundColorChanged(_ sender: NSColorWell) {
@@ -497,6 +567,47 @@ final class CapturePreviewWindow: NSWindow {
     private func updateUndoRedoButtons() {
         undoBtn.isEnabled = rearrangeActive ? spriteLayer.canUndo : annotationOverlay.canUndo
         redoBtn.isEnabled = rearrangeActive ? spriteLayer.canRedo : annotationOverlay.canRedo
+    }
+
+    private func refreshAnnotationControls() {
+        guard annotationSettingsContainer != nil else { return }
+        let effectiveTool = annotationOverlay.selectedAnnotationTool ?? annotationOverlay.currentTool
+        let showsBlur = effectiveTool == .blur
+        let showsArrow = effectiveTool == .arrow
+
+        blurControls.forEach { $0.isHidden = !showsBlur }
+        arrowControls.forEach { $0.isHidden = !showsArrow }
+        annotationSettingsHint.isHidden = showsBlur || showsArrow
+        switch effectiveTool {
+        case .text:
+            annotationSettingsHint.stringValue = "Scroll text to resize"
+        case .badge:
+            annotationSettingsHint.stringValue = "Click to place badge"
+        case .pen, .box:
+            annotationSettingsHint.stringValue = "Select item to edit colour"
+        case .arrow, .blur:
+            annotationSettingsHint.stringValue = ""
+        }
+        annotationSettingsContainer.toolTip = showsArrow
+            ? "Select an arrow, then adjust its head size and tail thickness"
+            : nil
+
+        blurSlider.doubleValue = Double(annotationOverlay.currentBlurRadius)
+        blurValueLabel.stringValue = "\(Int(annotationOverlay.currentBlurRadius.rounded())) px"
+        arrowHeadSlider.doubleValue = Double(annotationOverlay.currentArrowHeadSize)
+        arrowHeadValueLabel.stringValue = "\(Int(annotationOverlay.currentArrowHeadSize.rounded())) px"
+        arrowTailSlider.doubleValue = Double(annotationOverlay.currentArrowTailWidth)
+        arrowTailValueLabel.stringValue = String(format: "%.1f px", annotationOverlay.currentArrowTailWidth)
+        updateSelectedColorButton()
+    }
+
+    private func updateSelectedColorButton() {
+        guard annotationOverlay != nil else { return }
+        for (index, button) in colorButtons.enumerated() {
+            let isSelected = presetColors[index].isEqual(annotationOverlay.currentColor)
+            button.layer?.borderColor = (isSelected ? NSColor.controlAccentColor : NSColor.gray.withAlphaComponent(0.5)).cgColor
+            button.layer?.borderWidth = isSelected ? 2.5 : 1
+        }
     }
 
     @objc private func copyTextClicked() {
