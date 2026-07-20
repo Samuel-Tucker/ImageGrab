@@ -70,6 +70,46 @@ final class AnnotationTextView: NSTextView {
     }
 }
 
+/// Pure geometry for drawing an arrow whose filled head always stays ahead of
+/// the shaft: the head length is floored relative to the shaft thickness and
+/// the shaft stops at the head's base, so a thick tail can never poke through
+/// or swallow a small head. Kept AppKit-free so it can be unit-tested.
+struct ArrowRenderGeometry {
+    static let headAngle: CGFloat = .pi / 6
+    /// Minimum head length as a multiple of the shaft (tail) width.
+    static let minimumHeadToTailRatio: CGFloat = 2.5
+
+    let headLength: CGFloat
+    let tip: CGPoint
+    let wingLeft: CGPoint
+    let wingRight: CGPoint
+    /// Where the shaft stroke ends: the base of the head triangle, not the tip.
+    let shaftEnd: CGPoint
+    /// False when the arrow is shorter than its own head; the head alone is drawn.
+    let hasShaft: Bool
+
+    init(start: CGPoint, end: CGPoint, headSize: CGFloat, lineWidth: CGFloat) {
+        let angle = atan2(end.y - start.y, end.x - start.x)
+        let length = hypot(end.x - start.x, end.y - start.y)
+        headLength = max(headSize, lineWidth * Self.minimumHeadToTailRatio)
+        tip = end
+        wingLeft = CGPoint(
+            x: end.x - headLength * cos(angle - Self.headAngle),
+            y: end.y - headLength * sin(angle - Self.headAngle)
+        )
+        wingRight = CGPoint(
+            x: end.x - headLength * cos(angle + Self.headAngle),
+            y: end.y - headLength * sin(angle + Self.headAngle)
+        )
+        let baseDistance = headLength * cos(Self.headAngle)
+        shaftEnd = CGPoint(
+            x: end.x - baseDistance * cos(angle),
+            y: end.y - baseDistance * sin(angle)
+        )
+        hasShaft = length > baseDistance
+    }
+}
+
 @MainActor
 final class AnnotationOverlayView: NSView {
     var currentTool: AnnotationTool = .box {
@@ -760,34 +800,27 @@ final class AnnotationOverlayView: NSView {
 
         case .arrow:
             guard annotation.points.count == 2 else { return }
-            let start = annotation.points[0]
-            let end = annotation.points[1]
-
-            let shaft = NSBezierPath()
-            shaft.lineWidth = annotation.lineWidth
-            shaft.lineCapStyle = .round
-            shaft.move(to: start)
-            shaft.line(to: end)
-            shaft.stroke()
-
-            let angle = atan2(end.y - start.y, end.x - start.x)
-            let headLen = annotation.arrowHeadSize
-            let headAngle: CGFloat = .pi / 6
-
-            let p1 = CGPoint(
-                x: end.x - headLen * cos(angle - headAngle),
-                y: end.y - headLen * sin(angle - headAngle)
+            let geometry = ArrowRenderGeometry(
+                start: annotation.points[0],
+                end: annotation.points[1],
+                headSize: annotation.arrowHeadSize,
+                lineWidth: annotation.lineWidth
             )
-            let p2 = CGPoint(
-                x: end.x - headLen * cos(angle + headAngle),
-                y: end.y - headLen * sin(angle + headAngle)
-            )
+
+            if geometry.hasShaft {
+                let shaft = NSBezierPath()
+                shaft.lineWidth = annotation.lineWidth
+                shaft.lineCapStyle = .round
+                shaft.move(to: annotation.points[0])
+                shaft.line(to: geometry.shaftEnd)
+                shaft.stroke()
+            }
 
             annotation.color.setFill()
             let head = NSBezierPath()
-            head.move(to: p1)
-            head.line(to: end)
-            head.line(to: p2)
+            head.move(to: geometry.wingLeft)
+            head.line(to: geometry.tip)
+            head.line(to: geometry.wingRight)
             head.close()
             head.fill()
 

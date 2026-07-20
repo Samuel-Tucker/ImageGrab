@@ -475,4 +475,46 @@ final class AnnotationOverlayViewTests: XCTestCase {
         XCTAssertEqual(point.x, x, accuracy: 0.01, file: file, line: line)
         XCTAssertEqual(point.y, y, accuracy: 0.01, file: file, line: line)
     }
+
+    // MARK: - ArrowRenderGeometry
+
+    func testArrowShaftStopsAtHeadBase() {
+        let g = ArrowRenderGeometry(
+            start: .zero, end: CGPoint(x: 100, y: 0), headSize: 14, lineWidth: 2.5
+        )
+        XCTAssertEqual(g.headLength, 14)
+        assertPoint(g.tip, x: 100, y: 0)
+        // The shaft must end at the triangle's base, short of the tip.
+        assertPoint(g.shaftEnd, x: 100 - 14 * cos(.pi / 6), y: 0)
+        XCTAssertTrue(g.hasShaft)
+    }
+
+    func testTinyHeadOnThickTailIsFlooredSoShaftCannotPokeThrough() {
+        // Regression: head 6 with tail 12 let the shaft's round cap punch
+        // straight through the head and out the other side.
+        let g = ArrowRenderGeometry(
+            start: .zero, end: CGPoint(x: 200, y: 0), headSize: 6, lineWidth: 12
+        )
+        XCTAssertEqual(g.headLength, 30) // 12 × 2.5 floor wins over the 6pt slider value
+        // The head's base spread must be wider than the shaft it caps.
+        XCTAssertGreaterThan(abs(g.wingLeft.y - g.wingRight.y), 12)
+        // And the shaft still stops behind the head's base.
+        XCTAssertLessThan(g.shaftEnd.x, g.tip.x)
+    }
+
+    func testArrowShorterThanItsHeadDrawsHeadOnly() {
+        let g = ArrowRenderGeometry(
+            start: .zero, end: CGPoint(x: 10, y: 0), headSize: 20, lineWidth: 2
+        )
+        XCTAssertFalse(g.hasShaft)
+    }
+
+    func testDiagonalArrowShaftEndSitsOnTheShaftLine() {
+        let g = ArrowRenderGeometry(
+            start: .zero, end: CGPoint(x: 100, y: 100), headSize: 14, lineWidth: 2.5
+        )
+        // 45° arrow: the shaft end must stay on the y = x line, behind the tip.
+        XCTAssertEqual(g.shaftEnd.x, g.shaftEnd.y, accuracy: 0.01)
+        XCTAssertLessThan(g.shaftEnd.x, 100)
+    }
 }
