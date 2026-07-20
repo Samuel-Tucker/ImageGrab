@@ -79,7 +79,9 @@ final class CapturePreviewWindow: NSWindow {
         let displayH = imgH * scale
 
         // Minimum width so toolbars/buttons are always visible
-        let minWindowW: CGFloat = 1040
+        // Must fit the annotation toolbar: tools + contextual settings + colours
+        // on the left (~821pt) and Rearrange/Copy Text (246pt) on the right.
+        let minWindowW: CGFloat = 1080
         let windowW = max(displayW, minWindowW)
         let totalH = displayH + bottomBarH + annotBarH
 
@@ -160,25 +162,27 @@ final class CapturePreviewWindow: NSWindow {
 
         // Tool segmented control
         let tools = NSSegmentedControl()
-        tools.segmentCount = 6
+        tools.segmentCount = 7
         tools.trackingMode = .selectOne
         tools.setImage(NSImage(systemSymbolName: "pencil.tip", accessibilityDescription: "Pen")!, forSegment: 0)
         tools.setImage(NSImage(systemSymbolName: "rectangle", accessibilityDescription: "Box")!, forSegment: 1)
         tools.setImage(NSImage(systemSymbolName: "arrow.up.right", accessibilityDescription: "Arrow")!, forSegment: 2)
         tools.setImage(NSImage(systemSymbolName: "textformat", accessibilityDescription: "Text")!, forSegment: 3)
         tools.setImage(NSImage(systemSymbolName: "drop.halffull", accessibilityDescription: "Blur")!, forSegment: 4)
-        tools.setLabel("NOPE!", forSegment: 5)
-        for segment in 0..<5 { tools.setWidth(36, forSegment: segment) }
-        tools.setWidth(62, forSegment: 5)
+        tools.setImage(NSImage(systemSymbolName: "1.circle.fill", accessibilityDescription: "Numbered badge")!, forSegment: 5)
+        tools.setLabel("NOPE!", forSegment: 6)
+        for segment in 0..<6 { tools.setWidth(36, forSegment: segment) }
+        tools.setWidth(62, forSegment: 6)
         tools.setToolTip("Draw a pixel-blurred area", forSegment: 4)
-        tools.setToolTip("Add a movable NOPE! badge", forSegment: 5)
+        tools.setToolTip("Drop numbered step badges: each click places the next number", forSegment: 5)
+        tools.setToolTip("Add a movable NOPE! badge", forSegment: 6)
         tools.setToolTip("Draw an arrow; select it to edit colour, head and tail", forSegment: 2)
         tools.selectedSegment = 1 // default to box
         tools.target = self
         tools.action = #selector(toolChanged(_:))
-        tools.frame = NSRect(x: x, y: 6, width: 248, height: 28)
+        tools.frame = NSRect(x: x, y: 6, width: 284, height: 28)
         bar.addSubview(tools)
-        x += 248 + 12
+        x += 284 + 12
 
         let settings = NSView(frame: NSRect(x: x, y: 0, width: 184, height: 40))
         annotationSettingsContainer = settings
@@ -508,7 +512,7 @@ final class CapturePreviewWindow: NSWindow {
     @objc private func toolChanged(_ sender: NSSegmentedControl) {
         annotationOverlay.commitTextIfNeeded()
         annotationOverlay.deselectAnnotation()
-        let tools: [AnnotationTool] = [.pen, .box, .arrow, .text, .blur, .badge]
+        let tools: [AnnotationTool] = [.pen, .box, .arrow, .text, .blur, .numberBadge, .badge]
         annotationOverlay.currentTool = tools[sender.selectedSegment]
         refreshAnnotationControls()
     }
@@ -583,6 +587,8 @@ final class CapturePreviewWindow: NSWindow {
             annotationSettingsHint.stringValue = "Scroll text to resize"
         case .badge:
             annotationSettingsHint.stringValue = "Click to place badge"
+        case .numberBadge:
+            annotationSettingsHint.stringValue = "Click to drop 1, 2, 3…"
         case .pen, .box:
             annotationSettingsHint.stringValue = "Select item to edit colour"
         case .arrow, .blur:

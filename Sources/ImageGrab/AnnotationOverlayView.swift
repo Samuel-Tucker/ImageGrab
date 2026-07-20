@@ -2,7 +2,7 @@ import AppKit
 import CoreImage
 
 enum AnnotationTool {
-    case pen, box, arrow, text, blur, badge
+    case pen, box, arrow, text, blur, badge, numberBadge
 }
 
 struct Annotation {
@@ -206,6 +206,17 @@ final class AnnotationOverlayView: NSView {
     }
     var canUndo: Bool { !annotations.isEmpty }
     var canRedo: Bool { !redoStack.isEmpty }
+
+    /// Next value for a numbered step badge: one past the highest number already
+    /// placed, so undoing the last badge reuses its number but deleting an
+    /// earlier one never causes duplicates.
+    private var nextNumberBadgeValue: Int {
+        let highest = annotations
+            .filter { $0.tool == .numberBadge }
+            .compactMap { Int($0.text) }
+            .max() ?? 0
+        return highest + 1
+    }
     var selectedAnnotationTool: AnnotationTool? {
         guard let selectedAnnotationIndex, annotations.indices.contains(selectedAnnotationIndex) else { return nil }
         return annotations[selectedAnnotationIndex].tool
@@ -238,7 +249,7 @@ final class AnnotationOverlayView: NSView {
 
         let annotation = annotations[selectedAnnotationIndex]
         isSynchronizingSelectionControls = true
-        if [.pen, .box, .arrow, .text].contains(annotation.tool) {
+        if [.pen, .box, .arrow, .text, .numberBadge].contains(annotation.tool) {
             currentColor = annotation.color
         }
         if annotation.tool == .text {
@@ -257,7 +268,7 @@ final class AnnotationOverlayView: NSView {
         guard !isSynchronizingSelectionControls,
               let selectedAnnotationIndex,
               annotations.indices.contains(selectedAnnotationIndex),
-              [.pen, .box, .arrow, .text].contains(annotations[selectedAnnotationIndex].tool),
+              [.pen, .box, .arrow, .text, .numberBadge].contains(annotations[selectedAnnotationIndex].tool),
               !annotations[selectedAnnotationIndex].color.isEqual(currentColor) else { return }
 
         annotations[selectedAnnotationIndex].color = currentColor
@@ -488,6 +499,23 @@ final class AnnotationOverlayView: NSView {
             return
         }
 
+        if currentTool == .numberBadge {
+            annotations.append(Annotation(
+                tool: .numberBadge,
+                color: currentColor,
+                points: [point],
+                lineWidth: 0,
+                text: String(nextNumberBadgeValue),
+                fontSize: 22
+            ))
+            clearRedoStack()
+            selectedAnnotationIndex = annotations.indices.last
+            synchronizeControlsFromSelection()
+            needsDisplay = true
+            onAnnotationsChanged?()
+            return
+        }
+
         let lw = currentTool == .arrow ? currentArrowTailWidth : baseLineWidth
         currentAnnotation = Annotation(
             tool: currentTool,
@@ -535,7 +563,7 @@ final class AnnotationOverlayView: NSView {
             } else {
                 currentAnnotation!.points[1] = point
             }
-        case .text, .badge:
+        case .text, .badge, .numberBadge:
             break
         }
         needsDisplay = true
@@ -840,6 +868,12 @@ final class AnnotationOverlayView: NSView {
             guard let pos = annotation.points.first else { return }
             drawBadge(annotation.text, at: pos, fontSize: annotation.fontSize)
 
+        case .numberBadge:
+            guard let pos = annotation.points.first else { return }
+            drawNumberBadge(
+                annotation.text, at: pos, fontSize: annotation.fontSize, color: annotation.color
+            )
+
         case .blur:
             guard annotation.points.count == 2, let blurSource else { return }
             let rect = normalizedRect(from: annotation.points[0], to: annotation.points[1])
@@ -877,6 +911,33 @@ final class AnnotationOverlayView: NSView {
         NSColor.white.setFill()
         NSBezierPath(roundedRect: rect, xRadius: 8, yRadius: 8).fill()
         attributed.draw(at: position)
+    }
+
+    private func drawNumberBadge(_ text: String, at position: CGPoint, fontSize: CGFloat, color: NSColor) {
+        let rect = numberBadgeRect(text: text, at: position, fontSize: fontSize)
+        color.setFill()
+        NSBezierPath(ovalIn: rect).fill()
+        let font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
+        let attributed = NSAttributedString(
+            string: text,
+            attributes: [.font: font, .foregroundColor: NSColor.white]
+        )
+        let size = attributed.size()
+        attributed.draw(at: CGPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2))
+    }
+
+    /// Circle centred on the click point; grows horizontally past 9 so two-digit
+    /// numbers still fit.
+    private func numberBadgeRect(text: String, at position: CGPoint, fontSize: CGFloat) -> NSRect {
+        let font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
+        let textWidth = NSAttributedString(string: text, attributes: [.font: font]).size().width
+        let diameter = max(fontSize * 1.7, textWidth + fontSize * 0.9)
+        return NSRect(
+            x: position.x - diameter / 2,
+            y: position.y - diameter / 2,
+            width: diameter,
+            height: diameter
+        )
     }
 
     private func blurredImage(_ image: NSImage, radius: CGFloat) -> NSImage? {
@@ -1021,6 +1082,12 @@ final class AnnotationOverlayView: NSView {
         case .badge:
             return badgeRect(for: annotation).insetBy(dx: -5, dy: -5).contains(point)
 
+        case .numberBadge:
+            guard let pos = annotation.points.first else { return false }
+            return numberBadgeRect(text: annotation.text, at: pos, fontSize: annotation.fontSize)
+                .insetBy(dx: -5, dy: -5)
+                .contains(point)
+
         case .box, .blur:
             guard annotation.points.count == 2 else { return false }
             return normalizedRect(from: annotation.points[0], to: annotation.points[1])
@@ -1049,6 +1116,9 @@ final class AnnotationOverlayView: NSView {
             )
         case .badge:
             return badgeRect(for: annotation)
+        case .numberBadge:
+            guard let pos = annotation.points.first else { return .zero }
+            return numberBadgeRect(text: annotation.text, at: pos, fontSize: annotation.fontSize)
         case .arrow:
             guard let first = annotation.points.first else { return .zero }
             var minX = first.x

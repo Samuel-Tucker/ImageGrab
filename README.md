@@ -23,7 +23,7 @@ Hot-corner capture strip — drag a capture out, copy its path, or rename it inl
 - **Delayed capture** — Choose `Now`, `3s`, `5s`, or `10s` from the menu bar popover before your next capture
 - **Preview before saving** — Review every capture before it is written to disk
 - **Copy Text / OCR** — Extract text from a preview or saved capture using Apple Vision, then copy it to the clipboard
-- **Annotation tools** — Pen, box, arrow, text, pixel blur, and a movable "NOPE!" badge stamp, with color presets plus a text background picker
+- **Annotation tools** — Pen, box, arrow, text, pixel blur, numbered step badges (each click drops 1, 2, 3…), and a movable "NOPE!" badge stamp, with color presets plus a text background picker
 - **Arrow styling** — Sliders for arrow head size and tail thickness; blur strength is adjustable per blur region
 - **Movable annotations** — Click existing text, boxes, arrows, or pen strokes to reposition them; selecting an annotation syncs the toolbar to its color and settings so edits apply to it directly
 - **Rearrange mode** — Lift regions of a screenshot into draggable sprites and move them around the image before saving

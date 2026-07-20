@@ -476,6 +476,54 @@ final class AnnotationOverlayViewTests: XCTestCase {
         XCTAssertEqual(point.y, y, accuracy: 0.01, file: file, line: line)
     }
 
+    // MARK: - Numbered badges
+
+    func testNumberBadgeClicksPlaceIncrementingNumbers() {
+        let overlay = makeOverlay()
+        overlay.currentTool = .numberBadge
+
+        for x in [20, 60, 100] {
+            overlay.handlePointerDown(at: CGPoint(x: CGFloat(x), y: 50))
+            overlay.handlePointerUp(at: CGPoint(x: CGFloat(x), y: 50))
+        }
+
+        XCTAssertEqual(overlay.debugAnnotations.map(\.text), ["1", "2", "3"])
+        XCTAssertTrue(overlay.debugAnnotations.allSatisfy { $0.tool == .numberBadge })
+    }
+
+    func testNumberBadgeUndoReusesTheFreedNumber() {
+        let overlay = makeOverlay()
+        overlay.currentTool = .numberBadge
+
+        overlay.handlePointerDown(at: CGPoint(x: 20, y: 50))
+        overlay.handlePointerUp(at: CGPoint(x: 20, y: 50))
+        overlay.handlePointerDown(at: CGPoint(x: 60, y: 50))
+        overlay.handlePointerUp(at: CGPoint(x: 60, y: 50))
+        overlay.undo()
+
+        overlay.handlePointerDown(at: CGPoint(x: 100, y: 50))
+        overlay.handlePointerUp(at: CGPoint(x: 100, y: 50))
+
+        XCTAssertEqual(overlay.debugAnnotations.map(\.text), ["1", "2"])
+    }
+
+    func testNumberBadgeIsHitTestableAndMovable() {
+        let overlay = makeOverlay()
+        overlay.currentTool = .numberBadge
+
+        overlay.handlePointerDown(at: CGPoint(x: 50, y: 50))
+        overlay.handlePointerUp(at: CGPoint(x: 50, y: 50))
+
+        // Switch tool, then drag the badge by its centre.
+        overlay.currentTool = .box
+        overlay.handlePointerDown(at: CGPoint(x: 50, y: 50))
+        overlay.handlePointerDragged(to: CGPoint(x: 90, y: 80))
+        overlay.handlePointerUp(at: CGPoint(x: 90, y: 80))
+
+        XCTAssertEqual(overlay.debugAnnotations.count, 1)
+        assertPoint(overlay.debugAnnotations[0].points[0], x: 90, y: 80)
+    }
+
     // MARK: - ArrowRenderGeometry
 
     func testArrowShaftStopsAtHeadBase() {
