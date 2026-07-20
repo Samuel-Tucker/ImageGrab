@@ -215,7 +215,17 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelega
         }
         captureStripWindow = strip
 
-        let monitor = HotCornerMonitor(corner: .topRight)
+        // The capture strip belongs to the Dell work display only. The zone
+        // hugs the top-right (under the menu bar's status-icon area) so it
+        // stays clear of macOS drag-to-top-edge and Spaces gestures that live
+        // along the top centre of the screen.
+        let monitor = HotCornerMonitor(
+            corner: .topRightBand,
+            bandWidth: 440,
+            screenFilter: { screen in
+                screen.localizedName.localizedCaseInsensitiveContains("DELL U4025QW")
+            }
+        )
         monitor.isEnabled = { [weak self] in
             guard let self else { return false }
             return !(self.captureStripWindow?.isPresented ?? false) && !self.isCaptureInProgress

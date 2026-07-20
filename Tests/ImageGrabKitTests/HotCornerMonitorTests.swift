@@ -43,6 +43,60 @@ final class HotCornerMonitorTests: XCTestCase {
         XCTAssertNil(detector.screenIndex(containing: CGPoint(x: 999, y: 799), screenFrames: [screen]))
     }
 
+    func testTopCenterZoneMatchesWideTargetAtTopEdge() {
+        let detector = HotCornerDetector(corner: .topCenter, zoneSize: 6, bandWidth: 440)
+        let screen = CGRect(x: 0, y: 0, width: 3840, height: 1620)
+
+        XCTAssertEqual(detector.cornerZone(for: screen), CGRect(x: 1700, y: 1614, width: 440, height: 6))
+        XCTAssertTrue(detector.contains(CGPoint(x: 1920, y: 1620), in: screen))
+        XCTAssertTrue(detector.contains(CGPoint(x: 1700, y: 1616), in: screen))
+        XCTAssertFalse(detector.contains(CGPoint(x: 1699, y: 1616), in: screen))
+        XCTAssertFalse(detector.contains(CGPoint(x: 1920, y: 1613), in: screen))
+    }
+
+    func testTopCenterZoneUsesOnlyMatchingScreenCoordinates() {
+        let detector = HotCornerDetector(corner: .topCenter, zoneSize: 6, bandWidth: 240)
+        let dell = CGRect(x: 0, y: 0, width: 2048, height: 864)
+
+        XCTAssertEqual(
+            detector.screenIndex(containing: CGPoint(x: 1024, y: 864), screenFrames: [dell]),
+            0
+        )
+        XCTAssertNil(
+            detector.screenIndex(containing: CGPoint(x: 3000, y: 900), screenFrames: [dell])
+        )
+    }
+
+    func testTopRightBandMatchesWideTargetAnchoredAtRightEdge() {
+        let detector = HotCornerDetector(corner: .topRightBand, zoneSize: 6, bandWidth: 440)
+        let screen = CGRect(x: 0, y: 0, width: 3840, height: 1620)
+
+        XCTAssertEqual(detector.cornerZone(for: screen), CGRect(x: 3400, y: 1614, width: 440, height: 6))
+        // Cursor pinned at the very top-right corner.
+        XCTAssertTrue(detector.contains(CGPoint(x: 3840, y: 1620), in: screen))
+        // Anywhere along the band at the top edge.
+        XCTAssertTrue(detector.contains(CGPoint(x: 3400, y: 1616), in: screen))
+        // Just left of the band, or below it, must not match.
+        XCTAssertFalse(detector.contains(CGPoint(x: 3399, y: 1616), in: screen))
+        XCTAssertFalse(detector.contains(CGPoint(x: 3600, y: 1613), in: screen))
+        // Top centre — where macOS drag-to-top gestures happen — stays free.
+        XCTAssertFalse(detector.contains(CGPoint(x: 1920, y: 1620), in: screen))
+    }
+
+    func testTopRightBandOnOffsetScreenUsesThatScreensEdges() {
+        let detector = HotCornerDetector(corner: .topRightBand, zoneSize: 6, bandWidth: 300)
+        // Dell sits to the right of another display in global coordinates.
+        let dell = CGRect(x: 1512, y: 0, width: 3840, height: 1620)
+
+        XCTAssertEqual(
+            detector.screenIndex(containing: CGPoint(x: 5352, y: 1620), screenFrames: [dell]),
+            0
+        )
+        XCTAssertNil(
+            detector.screenIndex(containing: CGPoint(x: 5000, y: 1620), screenFrames: [dell])
+        )
+    }
+
     func testMultiScreenReturnsCorrectIndex() {
         let detector = HotCornerDetector(corner: .topRight, zoneSize: 6)
         // Second display sits to the right; coordinates continue past the first.

@@ -7,14 +7,20 @@ struct HotCornerDetector {
     enum Corner {
         case topRight
         case topLeft
+        case topCenter
+        /// A wide band hugging the top-right of the screen (`bandWidth` × `zoneSize`),
+        /// matching the menu bar's system status-icon area.
+        case topRightBand
     }
 
     var corner: Corner
     var zoneSize: CGFloat
+    var bandWidth: CGFloat
 
-    init(corner: Corner = .topRight, zoneSize: CGFloat = 6) {
+    init(corner: Corner = .topRight, zoneSize: CGFloat = 6, bandWidth: CGFloat = 240) {
         self.corner = corner
         self.zoneSize = zoneSize
+        self.bandWidth = bandWidth
     }
 
     /// The small activation rectangle at the chosen corner of a screen.
@@ -27,6 +33,12 @@ struct HotCornerDetector {
             return CGRect(x: frame.maxX - zoneSize, y: y, width: zoneSize, height: zoneSize)
         case .topLeft:
             return CGRect(x: frame.minX, y: y, width: zoneSize, height: zoneSize)
+        case .topCenter:
+            let width = min(bandWidth, frame.width)
+            return CGRect(x: frame.midX - width / 2, y: y, width: width, height: zoneSize)
+        case .topRightBand:
+            let width = min(bandWidth, frame.width)
+            return CGRect(x: frame.maxX - width, y: y, width: width, height: zoneSize)
         }
     }
 
@@ -45,6 +57,14 @@ struct HotCornerDetector {
         case .topLeft:
             let nearLeft = point.x >= frame.minX && point.x <= frame.minX + zoneSize
             return nearTop && nearLeft
+        case .topCenter:
+            let halfWidth = min(bandWidth, frame.width) / 2
+            let nearCenter = point.x >= frame.midX - halfWidth && point.x <= frame.midX + halfWidth
+            return nearTop && nearCenter
+        case .topRightBand:
+            let width = min(bandWidth, frame.width)
+            let nearRight = point.x >= frame.maxX - width && point.x <= frame.maxX
+            return nearTop && nearRight
         }
     }
 
@@ -100,17 +120,25 @@ final class HotCornerMonitor {
     private let detector: HotCornerDetector
     private var dwell: HotCornerDwellTracker
     private let pollInterval: TimeInterval
+    private let screenFilter: (NSScreen) -> Bool
     private var timer: Timer?
 
     init(
         corner: HotCornerDetector.Corner = .topRight,
         zoneSize: CGFloat = 6,
+        bandWidth: CGFloat = 240,
         dwell: TimeInterval = 0.2,
-        pollInterval: TimeInterval = 0.05
+        pollInterval: TimeInterval = 0.05,
+        screenFilter: @escaping (NSScreen) -> Bool = { _ in true }
     ) {
-        self.detector = HotCornerDetector(corner: corner, zoneSize: zoneSize)
+        self.detector = HotCornerDetector(
+            corner: corner,
+            zoneSize: zoneSize,
+            bandWidth: bandWidth
+        )
         self.dwell = HotCornerDwellTracker(dwell: dwell)
         self.pollInterval = pollInterval
+        self.screenFilter = screenFilter
     }
 
     func start() {
@@ -128,7 +156,7 @@ final class HotCornerMonitor {
     }
 
     private func tick() {
-        let screens = NSScreen.screens
+        let screens = NSScreen.screens.filter(screenFilter)
         guard !screens.isEmpty else { return }
 
         let enabled = isEnabled()

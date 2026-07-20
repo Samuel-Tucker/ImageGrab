@@ -19,8 +19,12 @@ A lightweight macOS menu bar app for fast native screenshots, quick markup, OCR,
 - **Delayed capture** — Choose `Now`, `3s`, `5s`, or `10s` from the menu bar popover before your next capture
 - **Preview before saving** — Review every capture before it is written to disk
 - **Copy Text / OCR** — Extract text from a preview or saved capture using Apple Vision, then copy it to the clipboard
-- **Annotation tools** — Pen, box, arrow, and text with color presets plus a text background picker
-- **Movable annotations** — Click existing text, boxes, arrows, or pen strokes to reposition them
+- **Annotation tools** — Pen, box, arrow, text, pixel blur, and numbered badges, with color presets plus a text background picker
+- **Arrow styling** — Sliders for arrow head size and tail thickness; blur strength is adjustable per blur region
+- **Movable annotations** — Click existing text, boxes, arrows, or pen strokes to reposition them; selecting an annotation syncs the toolbar to its color and settings so edits apply to it directly
+- **Rearrange mode** — Lift regions of a screenshot into draggable sprites and move them around the image before saving
+- **Hot-corner capture strip** — Park the pointer in the top-right band of the configured work display (under the menu bar status icons) to drop down a strip of recent captures; drag one out, copy its path, or rename it inline. The zone hugs the top-right so it stays clear of macOS drag-to-top and Spaces gestures.
+- **Pinned popover & multi-select** — Pin the menu bar popover open and select multiple captures to copy together
 - **Editable text markup** — Click text annotations to reopen editing, then adjust font size with `Cmd+=`, `Cmd+-`, or the scroll wheel
 - **Quick view panel** — Hover a thumbnail and click the eye icon for a floating larger preview
 - **Thumbnail grid** — Browse up to 50 recent captures from the menu bar popover
@@ -136,7 +140,7 @@ Captures are stored in `~/Library/Application Support/ImageGrab/Captures/` for f
 | `Opt+Cmd+G` | Start full-screen capture |
 | `Cmd+Z` | Undo the last committed annotation |
 | `Cmd+Shift+Z` | Redo the last undone annotation |
-| `Esc` | Cancel capture, clear selection, or finish text editing |
+| `Esc` | Cancel capture, clear selection, finish text editing, or close the capture strip |
 | `Return` | Save & Copy Image from the preview window |
 | `Cmd+=` / `Cmd+-` | Increase or decrease selected text size |
 | `Scroll wheel` | Adjust text size while using or editing the text tool |
