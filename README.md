@@ -12,6 +12,10 @@ A lightweight macOS menu bar app for fast native screenshots, quick markup, OCR,
 |:-:|:-:|
 | ![Popover Grid](Screenshots/popover-grid.png) | ![Context Menu](Screenshots/context-menu.png) |
 
+Hot-corner capture strip — drag a capture out, copy its path, or rename it inline:
+
+![Capture Strip](Screenshots/capture-strip.png)
+
 ## Features
 
 - **Global hotkeys** — Press `Ctrl+Cmd+G` for region capture or `Opt+Cmd+G` for full-screen capture. `Opt+G` is still attempted as a legacy region shortcut on systems that do not reserve it.
